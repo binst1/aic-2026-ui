@@ -147,7 +147,15 @@ if total_queries > 0:
 else:
     st.sidebar.info("Chưa khởi tạo câu nào.")
 
-st.sidebar.caption("🚀 Hệ thống tự động kiểm tra định dạng 100 dòng chuẩn.")
+# --- TÍNH NĂNG MỚI: LÀM SẠCH DATABASE CHO NGÀY MỚI ---
+st.sidebar.divider()
+st.sidebar.header("⚙️ Dọn Dẹp & Ngày Thi Mới")
+st.sidebar.caption("Chức năng này sẽ xóa sạch danh sách câu hỏi để làm vòng thi mới.")
+confirm_clear = st.sidebar.checkbox("Tôi xác nhận muốn xóa toàn bộ")
+if st.sidebar.button("🧹 Xóa Sạch Dữ Liệu (Reset All)", type="primary", disabled=not confirm_clear):
+    st.session_state.db = {}
+    save_db({})
+    st.rerun()
 
 # -------------------------------------------------------------------
 # GIAO DIỆN CHÍNH (THAY ĐỔI THEO MENU SIDEBAR)
@@ -185,7 +193,7 @@ if selected_menu == "📋 Quản Lý & Khởi Tạo Câu":
     with col_b:
         st.subheader("📑 Danh Sách Các Câu Đang Quản Lý")
         if not db:
-            st.info("Chưa có câu nào trong danh sách.")
+            st.info("Chưa có câu nào trong danh sách. Hãy thêm câu mới ở cột bên trái.")
         else:
             for query_id, info in list(db.items()):
                 status_color = info["status"]
@@ -194,10 +202,21 @@ if selected_menu == "📋 Quản Lý & Khởi Tạo Câu":
                     if info['raw_data']:
                         st.caption("Dữ liệu truy vấn kèm theo:")
                         st.code(info['raw_data'])
-                    if st.button(f"🗑️ Xóa câu {query_id}", key=f"del_{query_id}"):
-                        del db[query_id]
-                        save_db(db)
-                        st.rerun()
+                    
+                    # --- TÍNH NĂNG MỚI: SỬA SAI (RESET CÂU ĐÃ LÀM) & XÓA CÂU ---
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button(f"🗑️ Xóa hẳn câu này", key=f"del_{query_id}", use_container_width=True):
+                            del db[query_id]
+                            save_db(db)
+                            st.rerun()
+                    with btn_col2:
+                        if info["status"] == "🟢 Hoàn thành":
+                            if st.button(f"🔄 Đặt lại (Chưa làm)", key=f"reset_{query_id}", help="Bấm vào đây nếu bạn lỡ làm sai và muốn hệ thống ghi nhận lại là Chưa Làm", use_container_width=True):
+                                db[query_id]["status"] = "🔴 Chưa làm"
+                                db[query_id]["csv_content"] = ""
+                                save_db(db)
+                                st.rerun()
 
 # MỤC 2: TẠO FILE CSV SPAM
 elif selected_menu == "⚡ Tạo File CSV Spam":
