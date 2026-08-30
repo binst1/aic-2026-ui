@@ -10,7 +10,7 @@ DEFAULT_DIR = r"E:\AIC 2026\28-08-2026"
 DB_FILE = "task_database.json"
 
 # -------------------------------------------------------------------
-# LƯU TRỮ VÀ QUẢN LÝ DATABASE CÂU HOỎI (TASKS)
+# LƯU TRỮ VÀ QUẢN LÝ DATABASE CÂU HOỎI
 # -------------------------------------------------------------------
 def load_db():
     if os.path.exists(DB_FILE):
@@ -31,8 +31,37 @@ if "db" not in st.session_state:
 db = st.session_state.db
 
 # -------------------------------------------------------------------
-# BỘ KIỂM ĐỊNH FILE CSV (CSV VALIDATOR)
+# BỘ CÔNG CỤ XỬ LÝ (PARSE DATA & CSV)
 # -------------------------------------------------------------------
+def parse_raw_data(raw_data):
+    """Đọc dữ liệu thô và trích xuất Video ID, Frame, Thời gian"""
+    results = []
+    lines = raw_data.strip().split('\n')
+    current_vid = None
+    
+    for line in lines:
+        # Tìm Video ID (VD: L23_V024)
+        vid_match = re.search(r'(L\d+_V\d+)', line)
+        if vid_match and 'keyframe' not in line:
+            current_vid = vid_match.group(1)
+        
+        # Tìm Frame và Time (VD: frame=7642 time=00:05:05)
+        time_match = re.search(r'frame=(\d+)\s+time=(\d{2}:\d{2}:\d{2})', line)
+        if time_match and current_vid:
+            frame = time_match.group(1)
+            time_str = time_match.group(2)
+            h, m, s = map(int, time_str.split(':'))
+            total_sec = h * 3600 + m * 60 + s
+            results.append({
+                "video_id": current_vid,
+                "frame": frame,
+                "time_str": time_str,
+                "seconds": total_sec
+            })
+            current_vid = None # reset cho dòng tiếp theo
+            
+    return results
+
 def validate_csv_content(content_str, task_type):
     raw_lines = content_str.split("\n")
     if raw_lines and raw_lines[-1] == "":
@@ -50,22 +79,12 @@ def validate_csv_content(content_str, task_type):
         parts = line_clean.split(",")
         if task_type == "Textual KIS":
             if len(parts) != 2:
-                errors.append(f"❌ Dòng {idx+1} sai định dạng KIS (phải có 2 cột: video_id, frame_id). Nội dung: '{line_clean}'")
-            else:
-                if not parts[0].strip() or not parts[1].strip().isdigit():
-                    errors.append(f"❌ Dòng {idx+1} chứa frame_id không phải số hợp lệ: '{parts[1]}'")
-        else:  # Q&A
+                errors.append(f"❌ Dòng {idx+1} sai định dạng KIS")
+        else: 
             if len(parts) < 3:
-                errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A (phải đủ 3 cột: video_id, frame_id, answer). Nội dung: '{line_clean}'")
-            else:
-                if not parts[0].strip() or not parts[1].strip().isdigit() or not parts[2].strip():
-                    errors.append(f"❌ Dòng {idx+1} chứa dữ liệu Q&A không hợp lệ.")
-
+                errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A")
     return len(errors) == 0, errors
 
-# -------------------------------------------------------------------
-# THUẬT TOÁN TẠO CSV 100 DÒNG
-# -------------------------------------------------------------------
 def generate_exact_100_csv(video_id, input_frames, is_qa, qa_answer):
     num_frames = len(input_frames)
     total_target = 100
@@ -90,12 +109,10 @@ def generate_exact_100_csv(video_id, input_frames, is_qa, qa_answer):
             if (video_id, f_plus) not in seen and len(curr) < quota:
                 seen.add((video_id, f_plus))
                 curr.append((video_id, f_plus))
-            
             f_minus = base_frame - offset
             if f_minus >= 0 and (video_id, f_minus) not in seen and len(curr) < quota:
                 seen.add((video_id, f_minus))
                 curr.append((video_id, f_minus))
-
             offset += step
         per_frame_expanded.append(curr)
 
@@ -107,210 +124,180 @@ def generate_exact_100_csv(video_id, input_frames, is_qa, qa_answer):
                 final_results.append(sub[row_idx])
 
     if is_qa:
-        csv_lines = [f"{v},{f},{qa_answer}" for v, f in final_results]
-    else:
-        csv_lines = [f"{v},{f}" for v, f in final_results]
-
-    return "\n".join(csv_lines)
+        return "\n".join([f"{v},{f},{qa_answer}" for v, f in final_results])
+    return "\n".join([f"{v},{f}" for v, f in final_results])
 
 # -------------------------------------------------------------------
-# SIDEBAR CHÍNH (ĐIỀU HƯỚNG & THÔNG TIN)
+# SIDEBAR CHÍNH (ĐIỀU HƯỚNG & CẤU HÌNH)
 # -------------------------------------------------------------------
 st.sidebar.title("🎯 AIC 2026 Workspace")
 
+st.sidebar.header("⚙️ Cấu Hình Máy Local")
+# Thêm đường dẫn tới ổ chứa Video (Người dùng tự trỏ tới ổ D, E...)
+video_drive_path = st.sidebar.text_input("📁 Thư mục chứa Video (.mp4):", value=r"D:\AIC_Videos").strip()
+
+st.sidebar.divider()
 st.sidebar.header("👤 Người Đang Thao Tác")
 current_member = st.sidebar.selectbox("Chọn tên bạn:", ["Thành viên 1", "Thành viên 2", "Thành viên 3", "Thành viên 4", "Thành viên 5"])
 
 st.sidebar.divider()
-
-# CHUYỂN 3 MỤC SANG SIDEBAR MENU
 st.sidebar.header("📍 MENU CHỨC NĂNG")
 selected_menu = st.sidebar.radio(
     "Chọn mục làm việc:",
     [
         "📋 Quản Lý & Khởi Tạo Câu",
-        "⚡ Tạo File CSV Spam",
+        "🎬 Review Video & Tạo CSV",
         "📤 Upload & Kiểm Định Nộp Bài"
     ]
 )
 
 st.sidebar.divider()
-st.sidebar.header("📊 Tiến Độ Toàn Nhóm")
-
 total_queries = len(db)
 completed_queries = sum(1 for item in db.values() if item.get("status") == "🟢 Hoàn thành")
-
 if total_queries > 0:
-    prog = completed_queries / total_queries
-    st.sidebar.progress(prog)
-    st.sidebar.metric("Đã làm xong", f"{completed_queries} / {total_queries} câu", f"{prog*100:.1f}%")
-else:
-    st.sidebar.info("Chưa khởi tạo câu nào.")
+    st.sidebar.progress(completed_queries / total_queries)
+    st.sidebar.metric("Tiến độ Nhóm", f"{completed_queries} / {total_queries} câu")
 
-# --- TÍNH NĂNG MỚI: LÀM SẠCH DATABASE CHO NGÀY MỚI ---
-st.sidebar.divider()
-st.sidebar.header("⚙️ Dọn Dẹp & Ngày Thi Mới")
-st.sidebar.caption("Chức năng này sẽ xóa sạch danh sách câu hỏi để làm vòng thi mới.")
-confirm_clear = st.sidebar.checkbox("Tôi xác nhận muốn xóa toàn bộ")
-if st.sidebar.button("🧹 Xóa Sạch Dữ Liệu (Reset All)", type="primary", disabled=not confirm_clear):
+confirm_clear = st.sidebar.checkbox("Xác nhận xóa sạch DB")
+if st.sidebar.button("🧹 Reset Data (Ngày Mới)", disabled=not confirm_clear):
     st.session_state.db = {}
     save_db({})
     st.rerun()
 
+
 # -------------------------------------------------------------------
-# GIAO DIỆN CHÍNH (THAY ĐỔI THEO MENU SIDEBAR)
+# GIAO DIỆN CHÍNH
 # -------------------------------------------------------------------
 
-# MỤC 1: QUẢN LÝ & KHỞI TẠO CÂU
+# MỤC 1: QUẢN LÝ
 if selected_menu == "📋 Quản Lý & Khởi Tạo Câu":
     st.title("📋 Quản Lý & Khởi Tạo Câu (Query Bank)")
-    
-    col_a, col_b = st.columns([1, 1])
-    
-    with col_a:
-        st.subheader("➕ Thêm Câu Mới / Nhập Truy Vấn")
-        q_name = st.text_input("Tên Query (ví dụ: query-p1-8-kis):", value="query-p1-8-kis").strip()
-        q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A"], horizontal=True, key="mgr_type")
-        q_desc = st.text_area("Đoạn văn miêu tả truy vấn (Query Description):", value="Người đầu bếp lần lượt đặt các miếng nguyên liệu...", height=100)
-        q_raw_data = st.text_area("Dữ liệu truy vấn thô / Bảng top kết quả (Dán text vào đây):", value="1   75     0.4472   0.0322581  L26_V171             6061      242.44    L26_V171_037_05", height=100)
-
-        if st.button("📌 Thêm Vào Danh Sách Tiến Độ", type="primary"):
-            if not q_name:
-                st.error("Vui lòng nhập tên Query!")
-            else:
-                db[q_name] = {
-                    "type": q_type,
-                    "description": q_desc,
-                    "raw_data": q_raw_data,
-                    "status": "🔴 Chưa làm",
-                    "assigned_to": current_member,
-                    "csv_content": ""
-                }
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.subheader("➕ Thêm Query")
+        q_name = st.text_input("Tên Query:", value="query-p2-14-kis")
+        q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A"], horizontal=True)
+        q_desc = st.text_area("Miêu tả truy vấn:")
+        q_raw_data = st.text_area("Dữ liệu truy vấn thô (Dán kết quả Top K vào đây):", height=150, 
+            help="Dán y nguyên kết quả truy vấn chứa Video ID, Frame, Time...")
+        if st.button("📌 Thêm Vào Database", type="primary"):
+            if q_name:
+                db[q_name] = {"type": q_type, "description": q_desc, "raw_data": q_raw_data, "status": "🔴 Chưa làm", "assigned_to": current_member, "csv_content": ""}
                 save_db(db)
-                st.success(f"Đã thêm `{q_name}` vào danh sách!")
+                st.success("Đã thêm!")
                 st.rerun()
+    with c2:
+        st.subheader("📑 Danh Sách Câu")
+        for q_id, info in list(db.items()):
+            with st.expander(f"{info['status']} {q_id} ({info['type']})"):
+                st.write(info['description'])
+                col_del, col_re = st.columns(2)
+                if col_del.button("🗑️ Xóa", key=f"d_{q_id}"): del db[q_id]; save_db(db); st.rerun()
+                if info['status'] == "🟢 Hoàn thành" and col_re.button("🔄 Làm lại", key=f"r_{q_id}"):
+                    db[q_id]["status"] = "🔴 Chưa làm"; save_db(db); st.rerun()
 
-    with col_b:
-        st.subheader("📑 Danh Sách Các Câu Đang Quản Lý")
-        if not db:
-            st.info("Chưa có câu nào trong danh sách. Hãy thêm câu mới ở cột bên trái.")
-        else:
-            for query_id, info in list(db.items()):
-                status_color = info["status"]
-                with st.expander(f"{status_color} **{query_id}** ({info['type']}) - Tạo bởi: {info.get('assigned_to', 'N/A')}"):
-                    st.markdown(f"**Miêu tả:**\n{info['description']}")
-                    if info['raw_data']:
-                        st.caption("Dữ liệu truy vấn kèm theo:")
-                        st.code(info['raw_data'])
-                    
-                    # --- TÍNH NĂNG MỚI: SỬA SAI (RESET CÂU ĐÃ LÀM) & XÓA CÂU ---
-                    btn_col1, btn_col2 = st.columns(2)
-                    with btn_col1:
-                        if st.button(f"🗑️ Xóa hẳn câu này", key=f"del_{query_id}", use_container_width=True):
-                            del db[query_id]
-                            save_db(db)
-                            st.rerun()
-                    with btn_col2:
-                        if info["status"] == "🟢 Hoàn thành":
-                            if st.button(f"🔄 Đặt lại (Chưa làm)", key=f"reset_{query_id}", help="Bấm vào đây nếu bạn lỡ làm sai và muốn hệ thống ghi nhận lại là Chưa Làm", use_container_width=True):
-                                db[query_id]["status"] = "🔴 Chưa làm"
-                                db[query_id]["csv_content"] = ""
-                                save_db(db)
-                                st.rerun()
-
-# MỤC 2: TẠO FILE CSV SPAM
-elif selected_menu == "⚡ Tạo File CSV Spam":
-    st.title("⚡ Tool Spam File CSV (Chuẩn 100 Dòng)")
+# MỤC 2: REVIEW VIDEO & TẠO CSV (ĐÃ TỐI ƯU WORKFLOW)
+elif selected_menu == "🎬 Review Video & Tạo CSV":
+    st.title("🎬 Workflow Tối Ưu: Kiểm Tra Video & Auto-CSV")
     
     if not db:
-        st.warning("Vui lòng chọn mục '📋 Quản Lý & Khởi Tạo Câu' trên thanh bên trái để thêm câu hỏi trước!")
+        st.warning("Vui lòng thêm câu hỏi ở mục Quản Lý trước!")
     else:
-        selected_q = st.selectbox("Chọn câu bạn muốn làm:", list(db.keys()))
+        selected_q = st.selectbox("🎯 Chọn câu muốn giải quyết:", list(db.keys()))
         q_info = db[selected_q]
-        
-        st.info(f"📍 **Đang làm:** `{selected_q}` | **Loại:** {q_info['type']} | **Trạng thái:** {q_info['status']}")
-        if q_info['description']:
-            st.write(f"📖 **Nội dung:** {q_info['description']}")
+        st.info(f"**Miêu tả:** {q_info['description']}")
 
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            v_id = st.text_input("Video ID (ví dụ: L26_V171):", value="L26_V171").strip()
-            frames_input = st.text_area("Các mốc Frame ID nghi ngờ (phân tách bằng dấu phẩy/khoảng trắng):", value="6061, 5437, 5405", height=80)
+        # Khởi tạo Session State cho Autofill
+        if "auto_vid" not in st.session_state: st.session_state.auto_vid = ""
+        if "auto_frame" not in st.session_state: st.session_state.auto_frame = ""
+
+        # Chia màn hình làm 2 cột: Cột trái xem Video, Cột phải tạo CSV
+        col_video, col_csv = st.columns([1.2, 0.8])
+
+        with col_video:
+            st.subheader("🔍 Review Video Nhanh")
             
-            qa_ans = ""
-            if q_info['type'] == "Q&A":
-                qa_ans = st.text_input("Câu trả lời Q&A (dùng chung cho 100 dòng):").strip()
+            # Tự động đọc Raw Data
+            parsed_results = parse_raw_data(q_info['raw_data'])
             
-            if st.button("🚀 Sinh File & Tự Động Kiểm Định Nộp Bài", type="primary"):
-                parsed_f = [int(x) for x in re.findall(r'\d+', frames_input)]
-                if not v_id or not parsed_f:
-                    st.error("Vui lòng nhập Video ID và Frame ID!")
-                elif q_info['type'] == "Q&A" and not qa_ans:
-                    st.error("Q&A bắt buộc nhập câu trả lời!")
-                else:
-                    generated_csv = generate_exact_100_csv(v_id, parsed_f, q_info['type'] == "Q&A", qa_ans)
-                    
-                    db[selected_q]["csv_content"] = generated_csv
-                    db[selected_q]["status"] = "🟢 Hoàn thành"
-                    db[selected_q]["completed_by"] = current_member
-                    save_db(db)
-
-                    if os.path.exists(os.path.dirname(DEFAULT_DIR)):
-                        try:
-                            os.makedirs(DEFAULT_DIR, exist_ok=True)
-                            with open(os.path.join(DEFAULT_DIR, f"{selected_q}.csv"), "w", encoding="utf-8", newline="") as f:
-                                f.write(generated_csv)
-                        except Exception:
-                            pass
-
-                    st.success(f"🎉 Đã làm xong `{selected_q}`! Tiến độ chuyển sang 🟢 **Hoàn thành**.")
-                    st.download_button(
-                        label=f"📥 Tải File {selected_q}.csv (100 Dòng Chuẩn)",
-                        data=generated_csv,
-                        file_name=f"{selected_q}.csv",
-                        mime="text/csv"
-                    )
-                    st.rerun()
-
-        with c2:
-            st.subheader("👁️ Preview File Đã Làm")
-            if q_info.get("csv_content"):
-                lines = q_info["csv_content"].split("\n")
-                st.code("\n".join(lines[:10]), language="text")
-                st.caption(f"Tổng số dòng: {len(lines)} dòng.")
+            if not parsed_results:
+                st.error("⚠️ Không tìm thấy dữ liệu chuẩn trong Raw Data. Vui lòng check lại cú pháp lúc khai báo.")
             else:
-                st.text("Chưa có dữ liệu CSV cho câu này.")
-
-# MỤC 3: UPLOAD & KIỂM ĐỊNH NỘP BÀI
-elif selected_menu == "📤 Upload & Kiểm Định Nộp Bài":
-    st.title("📤 Upload File CSV & Auto-Validate Tiến Độ")
-    st.caption("Kéo thả file CSV được tạo từ máy ngoài lên đây để hệ thống tự động quét lỗi 100 dòng và tính điểm tiến độ.")
-
-    if not db:
-        st.warning("Chưa có danh sách câu trong hệ thống.")
-    else:
-        target_q_upload = st.selectbox("Chọn câu cần push file CSV nộp:", list(db.keys()), key="up_select")
-        uploaded_file = st.file_uploader(f"Kéo thả file CSV cho câu `{target_q_upload}` vào đây:", type=["csv"])
-
-        if uploaded_file is not None:
-            file_str = uploaded_file.getvalue().decode("utf-8").strip()
-            task_t = db[target_q_upload]["type"]
-            
-            is_valid, err_list = validate_csv_content(file_str, task_t)
-            
-            if is_valid:
-                st.balloons()
-                st.success("✅ **FILE HỢP LỆ VÀ ĐẠT CHUẨN 100 DÒNG!**")
+                # Tạo bảng chọn kết quả để xem video
+                options = [f"Top {i+1}: {r['video_id']} - {r['time_str']} (Frame: {r['frame']})" for i, r in enumerate(parsed_results)]
+                selected_opt = st.selectbox("Tự động trích xuất các mốc nghi ngờ, hãy chọn 1 mốc để xem:", options)
                 
-                if st.button(f"📥 Xác Nhận Nộp File & Đánh Dấu {target_q_upload} Hoàn Thành", type="primary"):
-                    db[target_q_upload]["csv_content"] = file_str
-                    db[target_q_upload]["status"] = "🟢 Hoàn thành"
-                    db[target_q_upload]["completed_by"] = current_member
-                    save_db(db)
+                # Lấy dữ liệu của lựa chọn hiện tại
+                opt_idx = options.index(selected_opt)
+                curr_res = parsed_results[opt_idx]
+                vid_id = curr_res['video_id']
+                target_sec = curr_res['seconds']
+                target_frame = curr_res['frame']
+
+                # KIỂM TRA FILE VIDEO LOCAL VÀ PHÁT
+                vid_path = os.path.join(video_drive_path, f"{vid_id}.mp4")
+                
+                if os.path.exists(vid_path):
+                    st.video(vid_path, start_time=target_sec)
+                    st.success(f"▶️ Đang phát `{vid_id}.mp4` tại **{curr_res['time_str']}** (Giây thứ {target_sec})")
+                else:
+                    st.error(f"❌ Không tìm thấy file `{vid_path}` trong ổ cứng. Hãy kiểm tra lại cấu hình đường dẫn ở Sidebar.")
+                
+                # Nút ma thuật: Bấm 1 phát là đưa data sang cột tạo CSV
+                if st.button("👉 CHUẨN RỒI! DÙNG VIDEO VÀ FRAME NÀY ĐỂ TẠO CSV", type="primary"):
+                    st.session_state.auto_vid = vid_id
                     
-                    st.success(f"Đã cập nhật tiến độ câu `{target_q_upload}` sang 🟢 **Hoàn thành** bởi **{current_member}**!")
+                    # Nối thêm frame vào danh sách nếu muốn kết hợp nhiều frame, hoặc ghi đè
+                    if st.session_state.auto_frame == "":
+                        st.session_state.auto_frame = str(target_frame)
+                    else:
+                        st.session_state.auto_frame += f", {target_frame}"
                     st.rerun()
-            else:
-                st.error("❌ FILE KHÔNG ĐẠT CHUẨN ĐỊNH DẠNG. CHI TIẾT LỖI:")
-                for err in err_list:
-                    st.write(err)
+
+        with col_csv:
+            st.subheader("⚡ Tool Spam CSV 100 Dòng")
+            with st.container(border=True):
+                # Các ô nhập liệu sẽ tự động lấy từ Session State nếu có
+                v_id = st.text_input("Video ID:", value=st.session_state.auto_vid)
+                frames_input = st.text_area("Các mốc Frame (tự động điền hoặc sửa tay):", value=st.session_state.auto_frame, height=80)
+                
+                qa_ans = ""
+                if q_info['type'] == "Q&A":
+                    qa_ans = st.text_input("Câu trả lời Q&A:").strip()
+                
+                if st.button("🚀 Sinh File & Nộp Lên Hệ Thống", type="primary", use_container_width=True):
+                    parsed_f = [int(x) for x in re.findall(r'\d+', frames_input)]
+                    if not v_id or not parsed_f:
+                        st.error("Thiếu Video ID hoặc Frame!")
+                    elif q_info['type'] == "Q&A" and not qa_ans:
+                        st.error("Q&A bắt buộc nhập câu trả lời!")
+                    else:
+                        generated_csv = generate_exact_100_csv(v_id, parsed_f, q_info['type'] == "Q&A", qa_ans)
+                        
+                        db[selected_q]["csv_content"] = generated_csv
+                        db[selected_q]["status"] = "🟢 Hoàn thành"
+                        save_db(db)
+                        
+                        st.success("🎉 Tạo thành công 100 dòng chuẩn!")
+                        st.download_button("📥 Tải CSV", data=generated_csv, file_name=f"{selected_q}.csv", mime="text/csv", use_container_width=True)
+                        
+                        # Reset autofill
+                        st.session_state.auto_vid = ""
+                        st.session_state.auto_frame = ""
+
+# MỤC 3: UPLOAD CSV NGOÀI (Giữ nguyên thuật toán Validation)
+elif selected_menu == "📤 Upload & Kiểm Định Nộp Bài":
+    st.title("📤 Upload CSV & Kiểm Định")
+    target_q = st.selectbox("Chọn câu:", list(db.keys())) if db else None
+    up_file = st.file_uploader("Kéo thả CSV:")
+    
+    if up_file and target_q:
+        file_str = up_file.getvalue().decode("utf-8").strip()
+        is_valid, errs = validate_csv_content(file_str, db[target_q]["type"])
+        if is_valid:
+            st.success("✅ File chuẩn 100 dòng!")
+            if st.button("Cập nhật Tiến độ"):
+                db[target_q].update({"csv_content": file_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
+                save_db(db); st.rerun()
+        else:
+            for e in errs: st.error(e)
