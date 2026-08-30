@@ -9,22 +9,183 @@ import streamlit as st
 # ==========================================
 # CẤU HÌNH TRANG & BIẾN MẶC ĐỊNH
 # ==========================================
-st.set_page_config(page_title="AIC 2026 Workspace", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AIC 2026 Workspace", page_icon="🎞️", layout="wide", initial_sidebar_state="expanded")
 
-DEFAULT_DIR = r"E:\AIC 2026\28-08-2026"
-VIDEO_DRIVE_PATH = r"G:\My Drive\AIC_Videos" 
 DB_FILE = "task_database.json"
 TEAM_MEMBERS = ["VThành", "LThiện", "PThiện", "Nguyên", "NThành"]
 
+# ==========================================
+# THEME — token hệ thống + CSS
+# ==========================================
+# Bảng màu lấy cảm hứng từ phòng dựng video: nền graphite tối, điểm nhấn
+# teal như vệt waveform/timeline, dữ liệu frame/timecode dùng font mono.
 st.markdown("""
-    <style>
-    .stProgress > div > div > div > div { background-color: #00a86b; }
-    .st-emotion-cache-1v0mbdj.e115fcil1 { border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    </style>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Be+Vietnam+Pro:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap');
+
+:root{
+  --bg-primary:#0B0F1A;
+  --bg-secondary:#0F1524;
+  --bg-surface:#161D2E;
+  --border-subtle:#232C42;
+  --accent:#2DD4BF;
+  --accent-strong:#14B8A6;
+  --accent-soft:rgba(45,212,191,0.12);
+  --warning:#F59E0B;
+  --danger:#F87171;
+  --success:#34D399;
+  --text-primary:#F1F5F9;
+  --text-muted:#94A3B8;
+  --font-display:'Sora',sans-serif;
+  --font-body:'Be Vietnam Pro',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+
+html, body, [class^="css"], [class*=" css"]{ font-family:var(--font-body); }
+[data-testid="stAppViewContainer"]{ background:var(--bg-primary); }
+[data-testid="stHeader"]{ background:transparent; }
+[data-testid="stSidebar"]{ background:var(--bg-secondary); border-right:1px solid var(--border-subtle); }
+[data-testid="stSidebar"] *{ color:var(--text-primary); }
+
+h1,h2,h3{ font-family:var(--font-display) !important; font-weight:700 !important; letter-spacing:-0.01em; color:var(--text-primary); }
+p, span, label, div{ color:var(--text-primary); }
+.stCaption, [data-testid="stCaptionContainer"]{ color:var(--text-muted) !important; }
+
+/* Thẻ viền (container border=True) */
+[data-testid="stVerticalBlockBorderWrapper"]{
+  background:var(--bg-surface);
+  border:1px solid var(--border-subtle) !important;
+  border-radius:14px;
+}
+
+/* Nút bấm */
+.stButton > button, .stDownloadButton > button{
+  border-radius:10px;
+  border:1px solid var(--border-subtle);
+  font-family:var(--font-body);
+  font-weight:600;
+  color:var(--text-primary);
+  background:var(--bg-surface);
+  transition:all .15s ease;
+}
+.stButton > button:hover, .stDownloadButton > button:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.stButton > button[kind="primary"]{
+  background:linear-gradient(135deg,var(--accent-strong),var(--accent));
+  color:#06201C;
+  border:none;
+}
+.stButton > button[kind="primary"]:hover{
+  filter:brightness(1.08);
+  color:#06201C;
+}
+
+/* Thanh tiến độ */
+[data-testid="stProgress"] div[role="progressbar"] > div{
+  background:linear-gradient(90deg,var(--accent-strong),var(--accent)) !important;
+  border-radius:6px;
+}
+[data-testid="stProgress"] div[role="progressbar"]{
+  background:var(--bg-surface) !important;
+  border-radius:6px;
+}
+
+/* Metric */
+[data-testid="stMetric"]{
+  background:var(--bg-surface);
+  border:1px solid var(--border-subtle);
+  border-radius:10px;
+  padding:10px 14px;
+}
+[data-testid="stMetricValue"]{ font-family:var(--font-mono) !important; color:var(--accent) !important; }
+[data-testid="stMetricLabel"]{ color:var(--text-muted) !important; }
+
+/* Điều hướng sidebar (radio -> pill nav) */
+[data-testid="stSidebar"] div[role="radiogroup"]{ gap:2px; }
+[data-testid="stSidebar"] div[role="radiogroup"] label{
+  border-radius:10px;
+  padding:8px 10px;
+  width:100%;
+  font-weight:600;
+  transition:background .15s ease;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] label:hover{ background:var(--accent-soft); }
+[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]{
+  background:var(--accent-soft);
+  border:1px solid var(--accent);
+}
+[data-testid="stSidebar"] div[role="radiogroup"] input{ accent-color:var(--accent); }
+
+/* Input & selectbox */
+.stTextInput input, .stTextArea textarea, .stNumberInput input{
+  background:var(--bg-surface) !important;
+  color:var(--text-primary) !important;
+  border:1px solid var(--border-subtle) !important;
+  border-radius:8px !important;
+  font-family:var(--font-mono);
+}
+[data-baseweb="select"] > div{
+  background:var(--bg-surface) !important;
+  border-color:var(--border-subtle) !important;
+  border-radius:8px !important;
+}
+
+/* Tabs */
+[data-testid="stTabs"] button{ font-weight:600; }
+[data-testid="stTabs"] [aria-selected="true"]{ color:var(--accent) !important; }
+
+/* Badge trạng thái + logo */
+.badge{
+  font-family:var(--font-mono); font-size:12px; font-weight:600;
+  padding:3px 10px; border-radius:999px; display:inline-block; letter-spacing:.02em;
+}
+.badge-done{ background:rgba(52,211,153,.15); color:var(--success); border:1px solid rgba(52,211,153,.35); }
+.badge-todo{ background:rgba(248,113,113,.15); color:var(--danger); border:1px solid rgba(248,113,113,.35); }
+.tag-type{
+  font-family:var(--font-mono); font-size:11px; color:var(--text-muted);
+  border:1px solid var(--border-subtle); border-radius:6px; padding:1px 6px; margin-left:6px;
+}
+.header-eyebrow{
+  font-family:var(--font-mono); font-size:12px; color:var(--accent);
+  letter-spacing:.08em; text-transform:uppercase; margin-bottom:2px;
+}
+.header-rule{ height:2px; width:56px; background:linear-gradient(90deg,var(--accent),transparent); border-radius:2px; margin:8px 0 18px 0; }
+</style>
 """, unsafe_allow_html=True)
 
+
+def logo_svg(size=40):
+    """Logo tự thiết kế: khung ngắm keyframe với dấu play — không phụ thuộc ảnh ngoài."""
+    return f"""
+    <svg width="{size}" height="{size}" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 12V6a2 2 0 0 1 2-2h6" stroke="#2DD4BF" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M36 12V6a2 2 0 0 0-2-2h-6" stroke="#2DD4BF" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M4 28v6a2 2 0 0 0 2 2h6" stroke="#2DD4BF" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M36 28v6a2 2 0 0 1-2 2h-6" stroke="#2DD4BF" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M16 13l11 7-11 7V13z" fill="#2DD4BF"/>
+    </svg>
+    """
+
+
+def page_header(icon, title, subtitle):
+    st.markdown(f"""
+    <div class="header-eyebrow">AIC 2026 WORKSPACE</div>
+    <h1 style="margin-bottom:0;">{icon} {title}</h1>
+    <div style="color:var(--text-muted); margin-top:4px;">{subtitle}</div>
+    <div class="header-rule"></div>
+    """, unsafe_allow_html=True)
+
+
+def status_badge(status_str):
+    is_done = "Hoàn thành" in status_str
+    css_class = "badge-done" if is_done else "badge-todo"
+    return f'<span class="badge {css_class}">{status_str}</span>'
+
+
 # ==========================================
-# HÀM XỬ LÝ DỮ LIỆU (Backend)
+# HÀM XỬ LÝ DỮ LIỆU (Backend) — giữ nguyên logic gốc
 # ==========================================
 def load_db():
     if os.path.exists(DB_FILE):
@@ -121,17 +282,21 @@ def create_zip_file(db_data):
 # MÀN HÌNH CHỌN ROLE (LOGIN SCREEN)
 # ==========================================
 if st.session_state.current_member is None:
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1.2, 1.5, 1.2])
     with col2:
         with st.container(border=True):
-            st.image("https://cdn-icons-png.flaticon.com/512/9334/9334419.png", width=70)
-            st.header("👋 Xin chào!")
-            st.markdown("Chào mừng đến với **Trạm Làm Việc AIC 2026**.")
-            st.write("Vui lòng chọn tên của bạn để bắt đầu phiên làm việc:")
-            
+            st.markdown(f"""
+            <div style="text-align:center; padding:8px 0 4px 0;">
+                {logo_svg(56)}
+                <div class="header-eyebrow" style="margin-top:10px;">AIC 2026 · TRẠM LÀM VIỆC</div>
+                <h2 style="margin:2px 0 0 0;">Xin chào 👋</h2>
+                <div style="color:var(--text-muted);">Chọn tên của bạn để bắt đầu phiên làm việc</div>
+            </div>
+            """, unsafe_allow_html=True)
+
             selected_name = st.selectbox("👤 Định danh:", TEAM_MEMBERS)
-            
+
             if st.button("🚀 Bắt Đầu Làm Việc", type="primary", use_container_width=True):
                 st.session_state.current_member = selected_name
                 st.rerun()
@@ -143,9 +308,16 @@ current_member = st.session_state.current_member
 # SIDEBAR (NAVIGATION & DASHBOARD)
 # ==========================================
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/9334/9334419.png", width=60) 
-    st.title("AIC Workspace")
-    
+    st.markdown(f"""
+    <div style="display:flex; align-items:center; gap:10px; padding:4px 0 12px 0;">
+        {logo_svg(34)}
+        <div>
+            <div style="font-family:var(--font-display); font-weight:700; font-size:16px; line-height:1.1;">AIC Workspace</div>
+            <div style="color:var(--text-muted); font-size:11px;">Video & Keyframe Search 2026</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     with st.container(border=True):
         st.markdown(f"👤 Trực ban: **{current_member}**")
         if st.button("🔄 Đổi người", use_container_width=True):
@@ -157,20 +329,21 @@ with st.sidebar:
     total_queries = len(db)
     completed_queries = sum(1 for item in db.values() if item.get("status") == "🟢 Hoàn thành")
     prog = completed_queries / total_queries if total_queries > 0 else 0
-    
-    st.progress(prog)
-    col_st1, col_st2 = st.columns(2)
-    col_st1.metric("Hoàn thành", f"{completed_queries}/{total_queries}")
-    col_st2.metric("Tiến độ", f"{int(prog*100)}%")
+
+    with st.container(border=True):
+        st.markdown("**📊 Tiến độ chung**")
+        st.progress(prog)
+        col_st1, col_st2 = st.columns(2)
+        col_st1.metric("Hoàn thành", f"{completed_queries}/{total_queries}")
+        col_st2.metric("Tiến độ", f"{int(prog*100)}%")
     
     st.divider()
     selected_menu = st.radio(
         "📍 ĐIỀU HƯỚNG",
         [
-            "📋 Quản Lý Query", 
-            "🎬 Workflow Tạo CSV", 
-            "📤 Upload Nộp Bài", 
-            "🛠️ Tool Spam Nhanh", 
+            "📋 Quản Lý Query",
+            "📤 Upload Nộp Bài",
+            "🛠️ Tool Spam Nhanh",
             "📦 Tổng Hợp & Xuất File"
         ],
         label_visibility="collapsed"
@@ -178,9 +351,6 @@ with st.sidebar:
 
     st.divider()
     with st.expander("⚙️ Cài đặt hệ thống"):
-        st.caption(f"Thư mục lưu local:\n`{DEFAULT_DIR}`")
-        st.caption(f"Thư mục video:\n`{VIDEO_DRIVE_PATH}`")
-        st.markdown("---")
         confirm_clear = st.checkbox("Xác nhận xóa DB", key="chk_del")
         if st.button("🧹 Reset Ngày Mới", disabled=not confirm_clear, use_container_width=True):
             st.session_state.db = {}
@@ -192,7 +362,7 @@ with st.sidebar:
 # ==========================================
 
 if selected_menu == "📋 Quản Lý Query":
-    st.header("📋 Quản Lý & Khởi Tạo Câu Hỏi")
+    page_header("📋", "Quản Lý & Khởi Tạo Câu Hỏi", "Tạo query mới và theo dõi toàn bộ danh sách nhiệm vụ của đội.")
     col_form, col_list = st.columns([1.2, 1.8], gap="large")
     
     with col_form:
@@ -220,74 +390,18 @@ if selected_menu == "📋 Quản Lý Query":
             for q_id, info in list(db.items()):
                 with st.container(border=True):
                     c1, c2 = st.columns([0.8, 0.2])
-                    c1.markdown(f"**{info['status']} | `{q_id}`** ({info['type']})")
+                    c1.markdown(
+                        f"{status_badge(info['status'])} &nbsp; **`{q_id}`** <span class='tag-type'>{info['type']}</span>",
+                        unsafe_allow_html=True
+                    )
                     c1.caption(f"📖 {info['description']}  |  *(Tạo bởi: {info.get('assigned_to', 'Ẩn danh')})*")
                     with c2:
                         if st.button("🗑️", key=f"d_{q_id}"): del db[q_id]; save_db(db); st.rerun()
                         if info['status'] == "🟢 Hoàn thành" and st.button("🔄", key=f"r_{q_id}"):
                             db[q_id]["status"] = "🔴 Chưa làm"; save_db(db); st.rerun()
 
-elif selected_menu == "🎬 Workflow Tạo CSV":
-    st.header("🎬 Workflow: Soi Video & Tự Động Tạo CSV")
-    if not db:
-        st.warning("⚠️ Danh sách trống. Hãy tạo Query ở mục Quản lý trước!")
-    else:
-        selected_q = st.selectbox("🎯 Đang xử lý:", list(db.keys()))
-        q_info = db[selected_q]
-        st.markdown(f"*{q_info['description']}*")
-
-        if "auto_vid" not in st.session_state: st.session_state.auto_vid = ""
-        if "auto_frame" not in st.session_state: st.session_state.auto_frame = ""
-
-        col_video, col_tool = st.columns([1.5, 1], gap="medium")
-
-        with col_video:
-            with st.container(border=True):
-                st.subheader("🔍 Khung Nhìn Trực Tiếp")
-                parsed_results = parse_raw_data(q_info['raw_data'])
-                if not parsed_results:
-                    st.error("Không trích xuất được dữ liệu thô. Hãy dán lại chuẩn format.")
-                else:
-                    options = [f"Top {i+1} | 🎬 {r['video_id']} | ⏱ {r['time_str']} (Frame {r['frame']})" for i, r in enumerate(parsed_results)]
-                    selected_opt = st.selectbox("Chọn mốc thời gian để soi:", options)
-                    
-                    curr_res = parsed_results[options.index(selected_opt)]
-                    vid_id, target_sec, target_frame = curr_res['video_id'], curr_res['seconds'], curr_res['frame']
-                    vid_path = os.path.join(VIDEO_DRIVE_PATH, f"{vid_id}.mp4")
-                    
-                    if os.path.exists(vid_path):
-                        st.video(vid_path, start_time=target_sec)
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("✨ ĐÚNG FRAME NÀY! AUTO-FILL SANG CSV", type="primary", use_container_width=True):
-                            st.session_state.auto_vid = vid_id
-                            if st.session_state.auto_frame == "": st.session_state.auto_frame = str(target_frame)
-                            else: st.session_state.auto_frame += f", {target_frame}"
-                            st.rerun()
-                    else:
-                        st.warning(f"⚠️ Không tìm thấy file `{vid_id}.mp4` trong ổ đĩa ảo!")
-
-        with col_tool:
-            with st.container(border=True):
-                st.subheader("⚡ Tool Spam KIS/QA")
-                v_id = st.text_input("Video ID:", value=st.session_state.auto_vid)
-                frames_input = st.text_area("Các mốc Frame:", value=st.session_state.auto_frame, height=100)
-                qa_ans = st.text_input("Câu trả lời (Nếu là Q&A):") if q_info['type'] == "Q&A" else ""
-                
-                if st.button("🔥 Sinh File & Lưu Vào DB", use_container_width=True):
-                    parsed_f = [int(x) for x in re.findall(r'\d+', frames_input)]
-                    if not v_id or not parsed_f: st.error("Thiếu Video/Frame ID!")
-                    else:
-                        generated_csv = generate_spam_csv(v_id, parsed_f, q_info['type'] == "Q&A", qa_ans, 100, 5)
-                        db[selected_q].update({"csv_content": generated_csv, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                        save_db(db)
-                        st.session_state.auto_vid, st.session_state.auto_frame = "", ""
-                        st.success("Lưu DB thành công!")
-                        st.download_button("📥 Click tải CSV về máy", data=generated_csv, file_name=f"{selected_q}.csv", mime="text/csv", use_container_width=True)
-                        st.rerun()
-
 elif selected_menu == "📤 Upload Nộp Bài":
-    st.header("📤 Upload CSV (Validation)")
-    st.caption("Dùng chức năng này khi bạn tự làm file CSV bên ngoài và muốn cập nhật tiến độ.")
+    page_header("📤", "Upload CSV (Validation)", "Dùng khi bạn tự làm file CSV bên ngoài và muốn cập nhật tiến độ.")
     target_q = st.selectbox("Chọn câu cần update:", list(db.keys())) if db else None
     up_file = st.file_uploader("Kéo thả file CSV nộp bài vào đây:", type=['csv'])
     if up_file and target_q:
@@ -301,8 +415,7 @@ elif selected_menu == "📤 Upload Nộp Bài":
             for e in errs: st.error(e)
 
 elif selected_menu == "🛠️ Tool Spam Nhanh":
-    st.header("🛠️ Tool Spam Keyframe Tự Do")
-    st.caption("Công cụ độc lập không lưu vào DB. Dùng để sinh file test nhanh với các tùy chỉnh nâng cao.")
+    page_header("🛠️", "Tool Spam Keyframe Tự Do", "Công cụ độc lập không lưu vào DB — dùng để sinh file test nhanh với tùy chỉnh nâng cao.")
     
     tab_point, tab_range = st.tabs(["🎯 Spam Tỏa Tròn (Point Expand)", "⏱️ Spam Khoảng Thời Gian (Time Range)"])
     
@@ -350,12 +463,11 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
                     st.download_button("📥 Tải File CSV Xong", data=csv_out2, file_name=f"spam_range_{s2_vid}.csv", mime="text/csv", use_container_width=True)
 
 # ==========================================
-# MỤC MỚI: TỔNG HỢP & XUẤT FILE (ZIP)
+# TỔNG HỢP & XUẤT FILE (ZIP)
 # ==========================================
 elif selected_menu == "📦 Tổng Hợp & Xuất File":
-    st.header("📦 Tổng Hợp & Đóng Gói Bài Nộp")
+    page_header("📦", "Tổng Hợp & Đóng Gói Bài Nộp", "Kiểm tra tình trạng file và đóng gói toàn bộ bài nộp thành ZIP.")
     
-    # Phân loại query
     completed_queries = {k: v for k, v in db.items() if v["status"] == "🟢 Hoàn thành"}
     missing_queries = {k: v for k, v in db.items() if v["status"] == "🔴 Chưa làm"}
 
