@@ -1,8 +1,10 @@
 import os
 import re
+import csv
 import json
 import io
 import zipfile
+from datetime import datetime
 import pandas as pd
 import streamlit as st
 
@@ -12,7 +14,10 @@ import streamlit as st
 st.set_page_config(page_title="AIC 2026 Workspace", page_icon="🎞️", layout="wide", initial_sidebar_state="expanded")
 
 DB_FILE = "task_database.json"
+SUBMISSION_LOG_FILE = "submission_log.json"
 TEAM_MEMBERS = ["VThành", "LThiện", "PThiện", "Nguyên", "NThành"]
+SUFFIX_MAP = {"Textual KIS": "kis", "Q&A": "qa", "TRAKE": "trake"}
+MAX_ANSWER_LEN = 100
 
 # ==========================================
 # THEME — token hệ thống + CSS
@@ -102,21 +107,26 @@ p, span, label, div{ color:var(--text-primary); }
 [data-testid="stMetricValue"]{ font-family:var(--font-mono) !important; color:var(--accent) !important; }
 [data-testid="stMetricLabel"]{ color:var(--text-muted) !important; }
 
-/* Điều hướng sidebar (radio -> pill nav) */
-[data-testid="stSidebar"] div[role="radiogroup"]{ gap:2px; }
-[data-testid="stSidebar"] div[role="radiogroup"] label{
+/* Điều hướng sidebar: nút to, full-width, canh trái — dạng thanh (bar) thay vì chấm radio */
+[data-testid="stSidebar"] .stButton > button{
+  justify-content:flex-start;
+  text-align:left;
+  padding:12px 16px;
+  font-size:14.5px;
   border-radius:10px;
-  padding:8px 10px;
-  width:100%;
-  font-weight:600;
-  transition:background .15s ease;
+  margin-bottom:2px;
 }
-[data-testid="stSidebar"] div[role="radiogroup"] label:hover{ background:var(--accent-soft); }
-[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]{
+[data-testid="stSidebar"] .stButton > button[kind="secondary"]{
+  background:transparent;
+  border:1px solid transparent;
+}
+[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover{
   background:var(--accent-soft);
-  border:1px solid var(--accent);
+  border-color:var(--border-subtle);
 }
-[data-testid="stSidebar"] div[role="radiogroup"] input{ accent-color:var(--accent); }
+
+/* Radio còn lại trong nội dung chính (loại bài, loại spam...) — tô màu chấm theo accent */
+div[role="radiogroup"] input{ accent-color:var(--accent); }
 
 /* Input & selectbox */
 .stTextInput input, .stTextArea textarea, .stNumberInput input{
@@ -185,8 +195,20 @@ def status_badge(status_str):
 
 
 # ==========================================
-# HÀM XỬ LÝ DỮ LIỆU (Backend) — giữ nguyên logic gốc
+# HÀM XỬ LÝ DỮ LIỆU (Backend)
 # ==========================================
+def clean_video_id(vid):
+    """Bỏ đuôi file (.mp4, .avi...) nếu người dùng lỡ gõ kèm — BTC yêu cầu tên video không có đuôi."""
+    return re.sub(r'\.\w{2,4}$', '', vid.strip()) if vid else vid
+
+def build_csv_row(fields):
+    """Ghép các trường thành 1 dòng CSV đúng chuẩn BTC: tự động bọc ngoặc kép
+    và escape dấu ngoặc kép ("" ) khi field chứa dấu phẩy / ngoặc kép / xuống dòng."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=",", quoting=csv.QUOTE_MINIMAL, lineterminator="")
+    writer.writerow(fields)
+    return buf.getvalue()
+
 def load_db():
     if os.path.exists(DB_FILE):
         try:
@@ -202,6 +224,19 @@ if "db" not in st.session_state: st.session_state.db = load_db()
 db = st.session_state.db
 
 if "current_member" not in st.session_state: st.session_state.current_member = None
+
+def load_submission_log():
+    if os.path.exists(SUBMISSION_LOG_FILE):
+        try:
+            with open(SUBMISSION_LOG_FILE, "r", encoding="utf-8") as f: return json.load(f)
+        except Exception: pass
+    return []
+
+def save_submission_log(log):
+    with open(SUBMISSION_LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(log, f, ensure_ascii=False, indent=2)
+
+if "submission_log" not in st.session_state: st.session_state.submission_log = load_submission_log()
 
 def parse_raw_data(raw_data):
     results = []
@@ -219,13 +254,18 @@ def parse_raw_data(raw_data):
     return results
 
 def validate_csv_content(content_str, task_type, num_events=None):
-    raw_lines = [line.strip("\r") for line in content_str.split("\n") if line.strip("\r")]
+    # Dùng csv.reader để parse đúng chuẩn (tôn trọng dấu ngoặc kép quanh Answer có dấu phẩy/xuống dòng)
+    rows = [row for row in csv.reader(io.StringIO(content_str)) if row]
     errors = []
-    if len(raw_lines) != 100: errors.append(f"❌ Sai số dòng: Đang có {len(raw_lines)} dòng (Yêu cầu: 100).")
-    for idx, line in enumerate(raw_lines):
-        parts = line.split(",")
-        if task_type == "Textual KIS" and len(parts) != 2: errors.append(f"❌ Dòng {idx+1} sai định dạng KIS.")
-        elif task_type == "Q&A" and len(parts) < 3: errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A.")
+    if len(rows) != 100: errors.append(f"❌ Sai số dòng: Đang có {len(rows)} dòng (Yêu cầu: 100).")
+    for idx, parts in enumerate(rows):
+        if task_type == "Textual KIS" and len(parts) != 2:
+            errors.append(f"❌ Dòng {idx+1} sai định dạng KIS.")
+        elif task_type == "Q&A":
+            if len(parts) < 3:
+                errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A.")
+            elif len(parts) == 3 and len(parts[2]) > MAX_ANSWER_LEN:
+                errors.append(f"❌ Dòng {idx+1}: Answer dài {len(parts[2])} ký tự (tối đa {MAX_ANSWER_LEN}).")
         elif task_type == "TRAKE":
             expected = (num_events + 1) if num_events else None
             if expected and len(parts) != expected:
@@ -253,7 +293,7 @@ def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100
             offset += step
         final_results.extend(curr)
         
-    lines = [f"{v},{f},{qa_answer}" if is_qa else f"{v},{f}" for v, f in final_results[:total_target]]
+    lines = [build_csv_row([v, f, qa_answer] if is_qa else [v, f]) for v, f in final_results[:total_target]]
     return "\n".join(lines)
 
 def generate_range_csv(video_id, start_frame, end_frame, is_qa, qa_answer, total_target=100):
@@ -265,7 +305,7 @@ def generate_range_csv(video_id, start_frame, end_frame, is_qa, qa_answer, total
             f = int(round(start_frame + i * step))
             frames.append(f)
             
-    lines = [f"{video_id},{f},{qa_answer}" if is_qa else f"{video_id},{f}" for f in frames[:total_target]]
+    lines = [build_csv_row([video_id, f, qa_answer] if is_qa else [video_id, f]) for f in frames[:total_target]]
     return "\n".join(lines)
 
 def generate_trake_csv(video_id, event_frames, total_target=100, step=5):
@@ -283,7 +323,7 @@ def generate_trake_csv(video_id, event_frames, total_target=100, step=5):
             if all(f >= 0 for f in new_seq) and new_seq not in seen and len(sequences) < total_target:
                 seen.add(new_seq); sequences.append(new_seq)
         offset += step
-    lines = [f"{video_id}," + ",".join(str(f) for f in seq) for seq in sequences[:total_target]]
+    lines = [build_csv_row([video_id, *seq]) for seq in sequences[:total_target]]
     return "\n".join(lines)
 
 def time_to_sec(t_str):
@@ -293,12 +333,14 @@ def time_to_sec(t_str):
     except: return -1
 
 def create_zip_file(db_data):
-    """Hàm đóng gói các file CSV đã hoàn thành thành file ZIP"""
+    """Đóng gói các file CSV đã hoàn thành thành file ZIP, đúng cấu trúc BTC yêu cầu:
+    zip phải chứa thư mục submission/ bên trong, các CSV nằm trong thư mục đó
+    (không được nén CSV thẳng vào gốc zip)."""
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         for q_id, info in db_data.items():
             if info.get("status") == "🟢 Hoàn thành" and info.get("csv_content"):
-                file_name = f"{q_id}.csv"
+                file_name = f"submission/{q_id}.csv"
                 zip_file.writestr(file_name, info["csv_content"])
     return zip_buffer.getvalue()
 
@@ -362,16 +404,24 @@ with st.sidebar:
         col_st2.metric("Tiến độ", f"{int(prog*100)}%")
     
     st.divider()
-    selected_menu = st.radio(
-        "📍 ĐIỀU HƯỚNG",
-        [
-            "📋 Quản Lý Query",
-            "📤 Upload Nộp Bài",
-            "🛠️ Tool Spam Nhanh",
-            "📦 Tổng Hợp & Xuất File"
-        ],
-        label_visibility="collapsed"
-    )
+    st.markdown("<div class='header-eyebrow' style='margin-bottom:6px;'>📍 ĐIỀU HƯỚNG</div>", unsafe_allow_html=True)
+
+    NAV_ITEMS = [
+        "📋 Quản Lý Query",
+        "📤 Upload Nộp Bài",
+        "🛠️ Tool Spam Nhanh",
+        "📦 Tổng Hợp & Xuất File",
+    ]
+    if "selected_menu" not in st.session_state:
+        st.session_state.selected_menu = NAV_ITEMS[0]
+
+    for item in NAV_ITEMS:
+        is_active = st.session_state.selected_menu == item
+        if st.button(item, key=f"nav_{item}", use_container_width=True, type="primary" if is_active else "secondary"):
+            st.session_state.selected_menu = item
+            st.rerun()
+
+    selected_menu = st.session_state.selected_menu
 
     st.divider()
     with st.expander("⚙️ Cài đặt hệ thống"):
@@ -394,6 +444,9 @@ if selected_menu == "📋 Quản Lý Query":
             st.subheader("➕ Thêm Query Mới")
             q_name = st.text_input("Tên Query:", placeholder="VD: query-p2-14-kis")
             q_type = st.radio("Loại bài:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
+            expected_suffix = SUFFIX_MAP[q_type]
+            if q_name and not q_name.lower().endswith(f"-{expected_suffix}"):
+                st.warning(f"⚠️ Theo quy ước BTC, tên query nên kết thúc bằng \"-{expected_suffix}\" (VD: query-1-{expected_suffix}).")
             q_num_events = None
             if q_type == "TRAKE":
                 q_num_events = st.number_input("Số lượng events (N) trong chuỗi:", min_value=2, max_value=20, value=4)
@@ -460,10 +513,15 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
     with tab_point:
         col_inp, col_cfg = st.columns([1, 1])
         with col_inp:
-            s1_vid = st.text_input("Video ID (VD: L21_V013):", key="s1_vid")
+            s1_vid = clean_video_id(st.text_input("Video ID (VD: L21_V013):", key="s1_vid"))
             s1_frames = st.text_area("Các Frame ID gốc (cách nhau dấu phẩy):", key="s1_frames")
             s1_type = st.radio("Loại:", ["Textual KIS", "Q&A"], horizontal=True, key="s1_type")
-            s1_qa = st.text_input("Câu trả lời Q&A:") if s1_type == "Q&A" else ""
+            s1_qa = ""
+            if s1_type == "Q&A":
+                s1_qa = st.text_input("Câu trả lời Q&A:")
+                qa_len = len(s1_qa)
+                qa_color = "var(--danger)" if qa_len > MAX_ANSWER_LEN else ("var(--warning)" if qa_len > 90 else "var(--text-muted)")
+                st.markdown(f"<div style='font-family:var(--font-mono); font-size:12px; color:{qa_color}; margin-top:-8px;'>{qa_len}/{MAX_ANSWER_LEN} ký tự</div>", unsafe_allow_html=True)
         with col_cfg:
             s1_total = st.number_input("Tổng số dòng muốn tạo:", min_value=1, max_value=500, value=100)
             s1_step = st.number_input("Bước nhảy (Step Frame):", min_value=1, max_value=50, value=5)
@@ -479,12 +537,17 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
     with tab_range:
         col_inp2, col_cfg2 = st.columns([1, 1])
         with col_inp2:
-            s2_vid = st.text_input("Video ID (VD: L21_V013):", key="s2_vid")
+            s2_vid = clean_video_id(st.text_input("Video ID (VD: L21_V013):", key="s2_vid"))
             col_t1, col_t2 = st.columns(2)
             s2_start = col_t1.text_input("Từ thời gian (HH:MM:SS):", placeholder="00:05:00")
             s2_end = col_t2.text_input("Đến thời gian (HH:MM:SS):", placeholder="00:05:15")
             s2_type = st.radio("Loại:", ["Textual KIS", "Q&A"], horizontal=True, key="s2_type")
-            s2_qa = st.text_input("Câu trả lời Q&A:", key="s2_qa") if s2_type == "Q&A" else ""
+            s2_qa = ""
+            if s2_type == "Q&A":
+                s2_qa = st.text_input("Câu trả lời Q&A:", key="s2_qa")
+                qa_len2 = len(s2_qa)
+                qa_color2 = "var(--danger)" if qa_len2 > MAX_ANSWER_LEN else ("var(--warning)" if qa_len2 > 90 else "var(--text-muted)")
+                st.markdown(f"<div style='font-family:var(--font-mono); font-size:12px; color:{qa_color2}; margin-top:-8px;'>{qa_len2}/{MAX_ANSWER_LEN} ký tự</div>", unsafe_allow_html=True)
         with col_cfg2:
             s2_fps = st.number_input("FPS của Video (Chuẩn là 25):", min_value=1, max_value=60, value=25)
             s2_total = st.number_input("Tổng số dòng (chia đều):", min_value=1, max_value=500, value=100)
@@ -504,7 +567,7 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
         st.caption("Format: `<Tên file video>, <Frame ID_1>, <Frame ID_2>, ..., <Frame ID_N>` — thứ tự Frame ID phải theo đúng thứ tự thời gian của các event.")
         col_inp3, col_cfg3 = st.columns([1, 1])
         with col_inp3:
-            s3_vid = st.text_input("Video ID (VD: L10_V001):", key="s3_vid")
+            s3_vid = clean_video_id(st.text_input("Video ID (VD: L10_V001):", key="s3_vid"))
             s3_frames = st.text_area(
                 "Frame ID các event, theo thứ tự (cách nhau dấu phẩy):",
                 key="s3_frames", placeholder="1200, 1850, 2100, 2450"
@@ -531,7 +594,9 @@ elif selected_menu == "📦 Tổng Hợp & Xuất File":
     completed_queries = {k: v for k, v in db.items() if v["status"] == "🟢 Hoàn thành"}
     missing_queries = {k: v for k, v in db.items() if v["status"] == "🔴 Chưa làm"}
 
-    tab_kiemtra, tab_donggoi = st.tabs(["👁️ Kiểm tra tình trạng File", "🗜️ Đóng gói ZIP"])
+    tab_kiemtra, tab_donggoi, tab_theodoi = st.tabs([
+        "👁️ Kiểm tra tình trạng File", "🗜️ Đóng gói ZIP", "🧾 Theo Dõi Lần Nộp"
+    ])
     
     with tab_kiemtra:
         col_xanh, col_do = st.columns([1, 1])
@@ -581,6 +646,47 @@ elif selected_menu == "📦 Tổng Hợp & Xuất File":
                         use_container_width=True
                     )
             with col_zip2:
-                st.caption("Các file CSV sẽ nằm trong ZIP:")
+                st.caption("Các file CSV sẽ nằm trong ZIP (thư mục submission/):")
                 for k in completed_queries.keys():
-                    st.text(f"📄 {k}.csv")
+                    st.text(f"📄 submission/{k}.csv")
+
+    with tab_theodoi:
+        st.subheader("🧾 Theo Dõi Số Lần Nộp Bài")
+        st.caption("BTC cho phép nộp tối đa 3 lần / gói truy vấn. Bấm nút bên dưới ngay sau khi bạn đã nộp file trên hệ thống thi để cả đội cùng theo dõi.")
+
+        log = st.session_state.submission_log
+        count = len(log)
+        bar_color = "var(--danger)" if count >= 3 else ("var(--warning)" if count == 2 else "var(--success)")
+
+        with st.container(border=True):
+            st.markdown(
+                f"<div style='font-family:var(--font-mono); font-size:42px; font-weight:700; color:{bar_color};'>{count} / 3</div>",
+                unsafe_allow_html=True
+            )
+            st.caption("Số lần đã đánh dấu nộp cho gói truy vấn hiện tại")
+
+            if count >= 3:
+                st.error("⚠️ Đã đạt giới hạn 3 lần nộp! Kết quả tính điểm sẽ là lần nộp cuối cùng — không nộp thêm được nữa cho gói này.")
+            elif count == 2:
+                st.warning("⚠️ Còn đúng 1 lần nộp — kiểm tra thật kỹ trước khi nộp lần cuối.")
+
+            col_sub1, col_sub2 = st.columns(2)
+            with col_sub1:
+                if st.button("➕ Đánh dấu đã nộp lần này", type="primary", use_container_width=True, disabled=count >= 3):
+                    st.session_state.submission_log.append({
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "member": current_member,
+                    })
+                    save_submission_log(st.session_state.submission_log)
+                    st.rerun()
+            with col_sub2:
+                confirm_reset_sub = st.checkbox("Xác nhận reset (gói mới)")
+                if st.button("🔄 Reset (Gói truy vấn mới)", use_container_width=True, disabled=not confirm_reset_sub):
+                    st.session_state.submission_log = []
+                    save_submission_log([])
+                    st.rerun()
+
+        if log:
+            st.markdown("**Lịch sử nộp bài:**")
+            for idx, entry in reversed(list(enumerate(log, start=1))):
+                st.text(f"Lần {idx}: {entry['time']} — {entry['member']}")
