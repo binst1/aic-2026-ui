@@ -12,6 +12,7 @@ st.set_page_config(page_title="AIC 2026 Workspace", page_icon="⚡", layout="wid
 DEFAULT_DIR = r"E:\AIC 2026\28-08-2026"
 VIDEO_DRIVE_PATH = r"G:\My Drive\AIC_Videos" 
 DB_FILE = "task_database.json"
+TEAM_MEMBERS = ["VThành", "LThiện", "PThiện", "Nguyên", "NThành"]
 
 st.markdown("""
     <style>
@@ -36,6 +37,10 @@ def save_db(db):
 
 if "db" not in st.session_state: st.session_state.db = load_db()
 db = st.session_state.db
+
+# Biến Session State để lưu người dùng hiện tại
+if "current_member" not in st.session_state:
+    st.session_state.current_member = None
 
 def parse_raw_data(raw_data):
     results = []
@@ -62,7 +67,6 @@ def validate_csv_content(content_str, task_type):
         elif task_type == "Q&A" and len(parts) < 3: errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A.")
     return len(errors) == 0, errors
 
-# Cập nhật hàm Spam hỗ trợ tuỳ chỉnh Step & Số dòng
 def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100, step=5):
     if not input_frames: return ""
     base_quota = total_target // len(input_frames)
@@ -85,7 +89,6 @@ def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100
     lines = [f"{v},{f},{qa_answer}" if is_qa else f"{v},{f}" for v, f in final_results[:total_target]]
     return "\n".join(lines)
 
-# Hàm Spam rải đều theo mốc Thời Gian (Time Range)
 def generate_range_csv(video_id, start_frame, end_frame, is_qa, qa_answer, total_target=100):
     frames = []
     if total_target == 1:
@@ -106,11 +109,43 @@ def time_to_sec(t_str):
     except: return -1
 
 # ==========================================
+# MÀN HÌNH CHỌN ROLE (LOGIN SCREEN)
+# ==========================================
+if st.session_state.current_member is None:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1.2, 1.5, 1.2])
+    with col2:
+        with st.container(border=True):
+            st.image("https://cdn-icons-png.flaticon.com/512/9334/9334419.png", width=70)
+            st.header("👋 Xin chào!")
+            st.markdown("Chào mừng đến với **Trạm Làm Việc AIC 2026**.")
+            st.write("Vui lòng chọn tên của bạn để bắt đầu phiên làm việc:")
+            
+            selected_name = st.selectbox("👤 Định danh:", TEAM_MEMBERS)
+            
+            if st.button("🚀 Bắt Đầu Làm Việc", type="primary", use_container_width=True):
+                st.session_state.current_member = selected_name
+                st.rerun()
+    st.stop() # Dừng toàn bộ code bên dưới nếu chưa chọn Role
+
+# Gán current_member sau khi đã login thành công
+current_member = st.session_state.current_member
+
+# ==========================================
 # SIDEBAR (NAVIGATION & DASHBOARD)
 # ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/9334/9334419.png", width=60) 
     st.title("AIC Workspace")
+    
+    # Khu vực hiển thị thông tin người dùng
+    with st.container(border=True):
+        st.markdown(f"👤 Trực ban: **{current_member}**")
+        if st.button("🔄 Đổi người", use_container_width=True):
+            st.session_state.current_member = None
+            st.rerun()
+    
+    st.divider()
     
     total_queries = len(db)
     completed_queries = sum(1 for item in db.values() if item.get("status") == "🟢 Hoàn thành")
@@ -120,9 +155,6 @@ with st.sidebar:
     col_st1, col_st2 = st.columns(2)
     col_st1.metric("Hoàn thành", f"{completed_queries}/{total_queries}")
     col_st2.metric("Tiến độ", f"{int(prog*100)}%")
-    
-    st.divider()
-    current_member = st.selectbox("👤 Trực ban:", ["Thành viên 1", "Thành viên 2", "Thành viên 3", "Thành viên 4", "Thành viên 5"])
     
     st.divider()
     selected_menu = st.radio(
@@ -176,7 +208,7 @@ if selected_menu == "📋 Quản Lý Query":
                 with st.container(border=True):
                     c1, c2 = st.columns([0.8, 0.2])
                     c1.markdown(f"**{info['status']} | `{q_id}`** ({info['type']})")
-                    c1.caption(f"📖 {info['description']}")
+                    c1.caption(f"📖 {info['description']}  |  *(Tạo bởi: {info.get('assigned_to', 'Ẩn danh')})*")
                     with c2:
                         if st.button("🗑️", key=f"d_{q_id}"): del db[q_id]; save_db(db); st.rerun()
                         if info['status'] == "🟢 Hoàn thành" and st.button("🔄", key=f"r_{q_id}"):
@@ -250,21 +282,17 @@ elif selected_menu == "📤 Upload Nộp Bài":
         is_valid, errs = validate_csv_content(file_str, db[target_q]["type"])
         if is_valid:
             if st.button("Cập nhật tiến độ", type="primary"):
-                db[target_q].update({"csv_content": file_str, "status": "🟢 Hoàn thành"})
+                db[target_q].update({"csv_content": file_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
                 save_db(db); st.balloons(); st.rerun()
         else:
             for e in errs: st.error(e)
 
-# ==========================================
-# MỤC MỚI: TOOL SPAM NHANH (TỰ DO)
-# ==========================================
 elif selected_menu == "🛠️ Tool Spam Nhanh":
     st.header("🛠️ Tool Spam Keyframe Tự Do")
     st.caption("Công cụ độc lập không lưu vào DB. Dùng để sinh file test nhanh với các tùy chỉnh nâng cao.")
     
     tab_point, tab_range = st.tabs(["🎯 Spam Tỏa Tròn (Point Expand)", "⏱️ Spam Khoảng Thời Gian (Time Range)"])
     
-    # TAB 1: POINT EXPAND
     with tab_point:
         st.info("Nhập 1 hoặc nhiều mốc Frame. Tool sẽ tỏa ra xung quanh (Cộng/Trừ step) cho đến khi đủ số dòng.")
         col_inp, col_cfg = st.columns([1, 1])
@@ -287,7 +315,6 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
                     st.download_button("📥 Tải File CSV Xong", data=csv_out, file_name=f"spam_point_{s1_vid}.csv", mime="text/csv", use_container_width=True)
                     with st.expander("👁️ Xem trước kết quả"): st.code(csv_out)
 
-    # TAB 2: TIME RANGE (RẢI THẢM THỜI GIAN)
     with tab_range:
         st.info("Bạn biết sự kiện nằm trong khoảng thời gian từ A đến B? Nhập vào đây, hệ thống rải đều frame ra toàn bộ khoảng đó!")
         col_inp2, col_cfg2 = st.columns([1, 1])
