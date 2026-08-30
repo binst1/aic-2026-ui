@@ -1,134 +1,142 @@
+import streamlit as st
+import pandas as pd
 import os
 import re
-import pandas as pd
-import streamlit as st
 
-st.set_page_config(page_title="AIC 2026 - Team Workspace", page_icon="👥", layout="wide")
+# ==============================================================================
+# 1. CAU HINH TRANH NGHEN PAGE & TRANG THAI GIAO DIEN
+# ==============================================================================
+st.set_page_config(page_title="AI Challenge Query Manager", layout="wide")
 
-DEFAULT_DIR = r"E:\AIC 2026\28-08-2026"
+QUERY_DIR = "data/queries"
+SUBMISSION_DIR = "data/submissions"
+REQUIRED_COLUMNS = ['#', 'rerank', 'cosine', 'candidate', 'video_id', 'frame', 'time(s)', 'keyframe_id']
 
-# -------------------------------------------------------------------
-# THUẬT TOÁN TẠO CSV EXATCT 100 LINES
-# -------------------------------------------------------------------
-def generate_exact_100_csv(video_id, input_frames, is_qa, qa_answer):
-    num_frames = len(input_frames)
-    total_target = 100
-    base_quota = total_target // num_frames
-    remainder = total_target % num_frames
-    quotas = [base_quota + (1 if i < remainder else 0) for i in range(num_frames)]
+os.makedirs(QUERY_DIR, exist_ok=True)
+os.makedirs(SUBMISSION_DIR, exist_ok=True)
 
-    step = 5
-    per_frame_expanded = []
-    seen = set()
-
-    for i, base_frame in enumerate(input_frames):
-        quota = quotas[i]
-        curr = []
-        if (video_id, base_frame) not in seen:
-            seen.add((video_id, base_frame))
-            curr.append((video_id, base_frame))
-        
-        offset = step
-        while len(curr) < quota:
-            f_plus = base_frame + offset
-            if (video_id, f_plus) not in seen and len(curr) < quota:
-                seen.add((video_id, f_plus))
-                curr.append((video_id, f_plus))
-            
-            f_minus = base_frame - offset
-            if f_minus >= 0 and (video_id, f_minus) not in seen and len(curr) < quota:
-                seen.add((video_id, f_minus))
-                curr.append((video_id, f_minus))
-
-            offset += step
-        per_frame_expanded.append(curr)
-
-    final_results = []
-    max_len = max(len(sub) for sub in per_frame_expanded) if per_frame_expanded else 0
-    for row_idx in range(max_len):
-        for sub in per_frame_expanded:
-            if row_idx < len(sub) and len(final_results) < total_target:
-                final_results.append(sub[row_idx])
-
-    if is_qa:
-        csv_lines = [f"{v},{f},{qa_answer}" for v, f in final_results]
+# ==============================================================================
+# 2. HAM XU LY FILE QUERY (.TXT) VA FILE KET QUA (.CSV)
+# ==============================================================================
+def parse_query_txt(file_path):
+    """
+    Đọc file query-p1-xx.txt để tách phần Mô tả (Prompt) và Bảng Candidate gốc (nếu có)
+    """
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Tách đoạn text mô tả và phần bảng dữ liệu dựa vào dòng tiêu đề bảng '#'
+    if '#' in content:
+        parts = re.split(r'^\s*#\s+', content, flags=re.MULTILINE)
+        description = parts[0].strip()
+        table_str = "# " + parts[1].strip() if len(parts) > 1 else ""
     else:
-        csv_lines = [f"{v},{f}" for v, f in final_results]
+        description = content.strip()
+        table_str = ""
+        
+    return description, table_str
 
-    return "\n".join(csv_lines)
+def validate_and_save_csv(uploaded_file, query_id):
+    """
+    Validate định dạng file CSV tải lên và lưu trữ nếu hợp lệ
+    """
+    try:
+        df = pd.read_csv(uploaded_file)
+        
+        # 1. Kiểm tra cột bắt buộc
+        missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+        if missing_cols:
+            return False, f"Thiếu các cột: {', '.join(missing_cols)}", None
+        
+        # 2. Kiểm tra dữ liệu rỗng
+        if df.empty:
+            return False, "File CSV rỗng!", None
+        
+        # 3. Lưu file vào thư mục submissions
+        save_path = os.path.join(SUBMISSION_DIR, f"{query_id}.csv")
+        df.to_csv(save_path, index=False)
+        
+        return True, "Upload thành công và đã cập nhật tiến độ!", df
 
-# -------------------------------------------------------------------
-# GIAO DIỆN HỆ THỐNG
-# -------------------------------------------------------------------
-st.title("🌐 AIC 2026 - Online Team WorkStation")
+    except Exception as e:
+        return False, f"Lỗi đọc file CSV: {str(e)}", None
 
-# SIDEBAR: THÀNH VIÊN
-st.sidebar.header("👤 Người Thực Hiện")
-current_member = st.sidebar.selectbox("Bạn là ai?", ["Thành viên 1", "Thành viên 2", "Thành viên 3", "Thành viên 4", "Thành viên 5"])
+# ==============================================================================
+# 3. QUAN LY TIEN DO (PROGRESS TRACKER)
+# ==============================================================================
+# Lấy danh sách tất cả các câu truy vấn từ thư mục data/queries
+query_files = sorted([f for f in os.listdir(QUERY_DIR) if f.endswith('.txt')])
+total_queries = len(query_files)
 
-st.sidebar.divider()
-st.sidebar.info("💡 **Mẹo:** Sau khi xuất file thành công, hãy tải file CSV về và đẩy lên thư mục Google Drive chung của nhóm.")
+# Đếm số câu đã nộp (dựa trên các file CSV tồn tại trong SUBMISSION_DIR)
+submitted_queries = [f.replace('.csv', '') for f in os.listdir(SUBMISSION_DIR) if f.endswith('.csv')]
+completed_count = len(submitted_queries)
+progress_pct = (completed_count / total_queries) if total_queries > 0 else 0.0
 
-# MAIN AREA
-col_form, col_preview = st.columns([1, 1])
+# ==============================================================================
+# 4. GIAO DIEN MAIN DASHBOARD
+# ==============================================================================
+st.title("🎯 AI Challenge - Evaluation & Query Submission Dashboard")
 
-with col_form:
-    st.subheader("📝 Nhập Bài Làm")
+# --- KHU VUC 1: THANH TIEN DO (METRICS & PROGRESS BAR) ---
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Queries", total_queries)
+col2.metric("Completed", completed_count)
+col3.metric("Remaining", total_queries - completed_count)
+
+st.progress(progress_pct, text=f"Tiến độ hoàn thành: {completed_count}/{total_queries} ({progress_pct*100:.1f}%)")
+st.divider()
+
+# --- KHU VUC 2: SIDEBAR CHON CAU TRUY VAN ---
+st.sidebar.header("📋 Danh sách Query")
+if total_queries == 0:
+    st.sidebar.warning(f"Chưa có file query nào trong `{QUERY_DIR}`")
+    selected_query_file = None
+else:
+    # Đánh dấu icon cho câu đã nộp / chưa nộp
+    query_options = []
+    for qf in query_files:
+        qid = qf.replace('.txt', '')
+        status_icon = "✅" if qid in submitted_queries else "⏳"
+        query_options.append(f"{status_icon} {qid}")
     
-    filename = st.text_input("Tên File CSV xuất ra (ví dụ: query-p2-1.csv):").strip()
-    if filename and not filename.endswith(".csv"):
-        filename += ".csv"
+    selected_option = st.sidebar.radio("Chọn câu hỏi:", query_options)
+    selected_query_id = selected_option.split(" ")[1]
+    selected_query_file = f"{selected_query_id}.txt"
 
-    task_type = st.radio("Loại Task:", ["Textual KIS", "Q&A"], horizontal=True)
-    is_qa = (task_type == "Q&A")
+# --- KHU VUC 3: CHI TIET CAU HOI & UPLOAD ---
+if selected_query_file:
+    st.subheader(f"📌 Đang xem: `{selected_query_id}`")
     
-    qa_answer = ""
-    if is_qa:
-        qa_answer = st.text_input("Nhập câu trả lời Q&A (dùng chung 100 dòng):").strip()
-
-    video_id = st.text_input("Video ID (ví dụ: L21_V013):").strip()
-    frames_str = st.text_area("Danh sách Frame ID (nhập các số cách nhau bởi dấu phẩy):", height=80)
-
-    btn_create = st.button("🚀 Tạo Nội Dung CSV", type="primary", use_container_width=True)
-
-with col_preview:
-    st.subheader("👁️ Kiểm Tra & Tải File")
+    # Đọc thông tin đề bài từ file txt[cite: 1]
+    query_txt_path = os.path.join(QUERY_DIR, selected_query_file)
+    desc, candidate_table_raw = parse_query_txt(query_txt_path)
     
-    parsed_frames = [int(x) for x in re.findall(r'\d+', frames_str)]
-    if parsed_frames:
-        st.info(f"Phát hiện **{len(parsed_frames)}** mốc frame. Mỗi mốc chia **{100 // len(parsed_frames)}** slots.")
+    # Hiển thị mô tả đề bài
+    with st.expander("📖 Chi tiết Prompt / Visual Description", expanded=True):
+        st.markdown(desc)
     
-    if btn_create:
-        if not filename or not video_id or not parsed_frames:
-            st.error("❌ Vui lòng điền đầy đủ Tên File, Video ID và ít nhất 1 Frame ID!")
-        elif is_qa and not qa_answer:
-            st.error("❌ Bài Q&A bắt buộc phải nhập câu trả lời!")
+    st.divider()
+    
+    # Khu vực Upload file CSV kết quả
+    st.markdown("### 📥 Push File CSV Kết Quả Rerank")
+    uploaded_csv = st.file_uploader(
+        f"Kéo thả file .csv kết quả cho `{selected_query_id}` vào đây", 
+        type=["csv"],
+        key=selected_query_id
+    )
+    
+    if uploaded_csv is not None:
+        success, msg, df_result = validate_and_save_csv(uploaded_csv, selected_query_id)
+        if success:
+            st.success(msg)
+            st.rerun() # Refresh lại để cập nhật progress bar ngay lập tức
         else:
-            file_content = generate_exact_100_csv(video_id, parsed_frames, is_qa, qa_answer)
-            
-            # Nếu chạy dưới local thì thử tự ghi vào ổ E:\
-            if os.path.exists(os.path.dirname(DEFAULT_DIR)):
-                try:
-                    os.makedirs(DEFAULT_DIR, exist_ok=True)
-                    with open(os.path.join(DEFAULT_DIR, filename), "w", encoding="utf-8", newline="") as f:
-                        f.write(file_content)
-                    st.success(f"✅ Đã tự động lưu một bản vào ổ E: `{DEFAULT_DIR}\\{filename}`")
-                except Exception:
-                    pass
+            st.error(msg)
 
-            st.success(f"✅ **{current_member}** đã tạo thành công file `{filename}` (Đúng 100 dòng)!")
-            
-            # Nút tải file về máy
-            st.download_button(
-                label=f"📥 TẢI FILE {filename} VỀ MÁY CÁ NHÂN",
-                data=file_content,
-                file_name=filename,
-                mime="text/csv",
-                use_container_width=True
-            )
-            
-            st.text("📄 Xem trước 5 dòng đầu:")
-            st.code("\n".join(file_content.split("\n")[:5]))
-            st.text("📄 Xem trước 3 dòng cuối (Kiểm tra dòng thừa):")
-            lines = file_content.split("\n")
-            st.code(f"Dòng 98: {lines[-3]}\nDòng 99: {lines[-2]}\nDòng 100: {lines[-1]}")
+    # Hiển thị kết quả đã nộp (nếu đã có trong SUBMISSION_DIR)
+    submission_file_path = os.path.join(SUBMISSION_DIR, f"{selected_query_id}.csv")
+    if os.path.exists(submission_file_path):
+        st.markdown("#### 📊 Dữ liệu đã nộp gần nhất:")
+        existing_df = pd.read_csv(submission_file_path)
+        st.dataframe(existing_df, use_container_width=True)
