@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import io
+import zipfile
 import pandas as pd
 import streamlit as st
 
@@ -38,9 +40,7 @@ def save_db(db):
 if "db" not in st.session_state: st.session_state.db = load_db()
 db = st.session_state.db
 
-# Biến Session State để lưu người dùng hiện tại
-if "current_member" not in st.session_state:
-    st.session_state.current_member = None
+if "current_member" not in st.session_state: st.session_state.current_member = None
 
 def parse_raw_data(raw_data):
     results = []
@@ -91,8 +91,7 @@ def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100
 
 def generate_range_csv(video_id, start_frame, end_frame, is_qa, qa_answer, total_target=100):
     frames = []
-    if total_target == 1:
-        frames.append(start_frame)
+    if total_target == 1: frames.append(start_frame)
     else:
         step = max(1, (end_frame - start_frame) / (total_target - 1))
         for i in range(total_target):
@@ -107,6 +106,16 @@ def time_to_sec(t_str):
         h, m, s = map(int, t_str.split(':'))
         return h*3600 + m*60 + s
     except: return -1
+
+def create_zip_file(db_data):
+    """Hàm đóng gói các file CSV đã hoàn thành thành file ZIP"""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for q_id, info in db_data.items():
+            if info.get("status") == "🟢 Hoàn thành" and info.get("csv_content"):
+                file_name = f"{q_id}.csv"
+                zip_file.writestr(file_name, info["csv_content"])
+    return zip_buffer.getvalue()
 
 # ==========================================
 # MÀN HÌNH CHỌN ROLE (LOGIN SCREEN)
@@ -126,9 +135,8 @@ if st.session_state.current_member is None:
             if st.button("🚀 Bắt Đầu Làm Việc", type="primary", use_container_width=True):
                 st.session_state.current_member = selected_name
                 st.rerun()
-    st.stop() # Dừng toàn bộ code bên dưới nếu chưa chọn Role
+    st.stop()
 
-# Gán current_member sau khi đã login thành công
 current_member = st.session_state.current_member
 
 # ==========================================
@@ -138,7 +146,6 @@ with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/9334/9334419.png", width=60) 
     st.title("AIC Workspace")
     
-    # Khu vực hiển thị thông tin người dùng
     with st.container(border=True):
         st.markdown(f"👤 Trực ban: **{current_member}**")
         if st.button("🔄 Đổi người", use_container_width=True):
@@ -159,7 +166,13 @@ with st.sidebar:
     st.divider()
     selected_menu = st.radio(
         "📍 ĐIỀU HƯỚNG",
-        ["📋 Quản Lý Query", "🎬 Workflow Tạo CSV", "📤 Upload Nộp Bài", "🛠️ Tool Spam Nhanh"],
+        [
+            "📋 Quản Lý Query", 
+            "🎬 Workflow Tạo CSV", 
+            "📤 Upload Nộp Bài", 
+            "🛠️ Tool Spam Nhanh", 
+            "📦 Tổng Hợp & Xuất File"
+        ],
         label_visibility="collapsed"
     )
 
@@ -282,7 +295,7 @@ elif selected_menu == "📤 Upload Nộp Bài":
         is_valid, errs = validate_csv_content(file_str, db[target_q]["type"])
         if is_valid:
             if st.button("Cập nhật tiến độ", type="primary"):
-                db[target_q].update({"csv_content": file_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
+                db[target_q].update({"csv_content": file_str, "status": "🟢 Hoàn thành"})
                 save_db(db); st.balloons(); st.rerun()
         else:
             for e in errs: st.error(e)
@@ -294,11 +307,10 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
     tab_point, tab_range = st.tabs(["🎯 Spam Tỏa Tròn (Point Expand)", "⏱️ Spam Khoảng Thời Gian (Time Range)"])
     
     with tab_point:
-        st.info("Nhập 1 hoặc nhiều mốc Frame. Tool sẽ tỏa ra xung quanh (Cộng/Trừ step) cho đến khi đủ số dòng.")
         col_inp, col_cfg = st.columns([1, 1])
         with col_inp:
             s1_vid = st.text_input("Video ID (VD: L21_V013):", key="s1_vid")
-            s1_frames = st.text_area("Các Frame ID gốc (cách nhau bởi dấu phẩy):", key="s1_frames")
+            s1_frames = st.text_area("Các Frame ID gốc (cách nhau dấu phẩy):", key="s1_frames")
             s1_type = st.radio("Loại:", ["Textual KIS", "Q&A"], horizontal=True, key="s1_type")
             s1_qa = st.text_input("Câu trả lời Q&A:") if s1_type == "Q&A" else ""
         with col_cfg:
@@ -307,16 +319,13 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
             
             if st.button("🚀 Xuất CSV (Tỏa Tròn)", type="primary", use_container_width=True):
                 parsed_f = [int(x) for x in re.findall(r'\d+', s1_frames)]
-                if not s1_vid or not parsed_f:
-                    st.error("Thiếu thông tin Video ID hoặc Frame.")
+                if not s1_vid or not parsed_f: st.error("Thiếu thông tin Video ID hoặc Frame.")
                 else:
                     csv_out = generate_spam_csv(s1_vid, parsed_f, s1_type == "Q&A", s1_qa, s1_total, s1_step)
                     st.success(f"Tạo thành công {s1_total} dòng!")
                     st.download_button("📥 Tải File CSV Xong", data=csv_out, file_name=f"spam_point_{s1_vid}.csv", mime="text/csv", use_container_width=True)
-                    with st.expander("👁️ Xem trước kết quả"): st.code(csv_out)
 
     with tab_range:
-        st.info("Bạn biết sự kiện nằm trong khoảng thời gian từ A đến B? Nhập vào đây, hệ thống rải đều frame ra toàn bộ khoảng đó!")
         col_inp2, col_cfg2 = st.columns([1, 1])
         with col_inp2:
             s2_vid = st.text_input("Video ID (VD: L21_V013):", key="s2_vid")
@@ -326,22 +335,80 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
             s2_type = st.radio("Loại:", ["Textual KIS", "Q&A"], horizontal=True, key="s2_type")
             s2_qa = st.text_input("Câu trả lời Q&A:", key="s2_qa") if s2_type == "Q&A" else ""
         with col_cfg2:
-            s2_fps = st.number_input("FPS của Video (Chuẩn AIC là 25):", min_value=1, max_value=60, value=25)
+            s2_fps = st.number_input("FPS của Video (Chuẩn là 25):", min_value=1, max_value=60, value=25)
             s2_total = st.number_input("Tổng số dòng (chia đều):", min_value=1, max_value=500, value=100)
             
             if st.button("🚀 Xuất CSV (Rải Thảm)", type="primary", use_container_width=True):
-                sec_start = time_to_sec(s2_start)
-                sec_end = time_to_sec(s2_end)
-                
+                sec_start, sec_end = time_to_sec(s2_start), time_to_sec(s2_end)
                 if not s2_vid: st.error("Thiếu Video ID!")
-                elif sec_start < 0 or sec_end < 0: st.error("Sai định dạng thời gian. Vui lòng nhập HH:MM:SS")
-                elif sec_start >= sec_end: st.error("Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc!")
+                elif sec_start < 0 or sec_end < 0: st.error("Sai định dạng thời gian.")
+                elif sec_start >= sec_end: st.error("Thời gian bắt đầu phải < kết thúc!")
                 else:
-                    frame_start = sec_start * s2_fps
-                    frame_end = sec_end * s2_fps
-                    st.toast(f"Khoảng Frame nội suy: {frame_start} đến {frame_end}", icon="📐")
-                    
+                    frame_start, frame_end = sec_start * s2_fps, sec_end * s2_fps
                     csv_out2 = generate_range_csv(s2_vid, frame_start, frame_end, s2_type == "Q&A", s2_qa, s2_total)
-                    st.success(f"Tạo thành công {s2_total} dòng (rải đều từ frame {frame_start} - {frame_end})!")
+                    st.success(f"Tạo thành công {s2_total} dòng!")
                     st.download_button("📥 Tải File CSV Xong", data=csv_out2, file_name=f"spam_range_{s2_vid}.csv", mime="text/csv", use_container_width=True)
-                    with st.expander("👁️ Xem trước kết quả"): st.code(csv_out2)
+
+# ==========================================
+# MỤC MỚI: TỔNG HỢP & XUẤT FILE (ZIP)
+# ==========================================
+elif selected_menu == "📦 Tổng Hợp & Xuất File":
+    st.header("📦 Tổng Hợp & Đóng Gói Bài Nộp")
+    
+    # Phân loại query
+    completed_queries = {k: v for k, v in db.items() if v["status"] == "🟢 Hoàn thành"}
+    missing_queries = {k: v for k, v in db.items() if v["status"] == "🔴 Chưa làm"}
+
+    tab_kiemtra, tab_donggoi = st.tabs(["👁️ Kiểm tra tình trạng File", "🗜️ Đóng gói ZIP"])
+    
+    with tab_kiemtra:
+        col_xanh, col_do = st.columns([1, 1])
+        
+        with col_xanh:
+            st.subheader(f"✅ Đã Hoàn Thành ({len(completed_queries)} file)")
+            with st.container(border=True):
+                if not completed_queries:
+                    st.info("Chưa có file nào hoàn thành.")
+                else:
+                    target_view = st.selectbox("Chọn file để xem nội dung bên trong:", list(completed_queries.keys()))
+                    if target_view:
+                        st.caption(f"Người làm: **{completed_queries[target_view].get('completed_by', 'Ẩn danh')}**")
+                        st.code(completed_queries[target_view]["csv_content"], language="csv")
+
+        with col_do:
+            st.subheader(f"⚠️ Còn Thiếu ({len(missing_queries)} file)")
+            with st.container(border=True):
+                if not missing_queries:
+                    st.success("Tuyệt vời! Đã xong toàn bộ.")
+                    st.balloons()
+                else:
+                    for k in missing_queries.keys():
+                        st.error(f"🔴 {k}")
+                        
+    with tab_donggoi:
+        st.subheader("🗜️ Đóng gói toàn bộ file nộp")
+        st.info("Hệ thống sẽ tự động quét tất cả các câu '🟢 Hoàn thành', tạo thành các file .csv chuẩn và nhét chung vào 1 file nén ZIP.")
+        
+        if not completed_queries:
+            st.warning("⚠️ Chưa có file nào hoàn thành để đóng gói.")
+        else:
+            col_zip1, col_zip2 = st.columns([1, 1])
+            with col_zip1:
+                zip_filename = st.text_input("Nhập tên file nén của bạn:", value="submit_lan_1.zip", placeholder="VD: p1_submit.zip")
+                if not zip_filename.endswith(".zip"):
+                    zip_filename += ".zip"
+                
+                if st.button("📦 Tạo File ZIP (Đóng gói)", type="primary"):
+                    zip_data = create_zip_file(db)
+                    st.success(f"🎉 Đã nén thành công {len(completed_queries)} file!")
+                    st.download_button(
+                        label=f"📥 CLICK ĐỂ TẢI XUỐNG ({zip_filename})",
+                        data=zip_data,
+                        file_name=zip_filename,
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+            with col_zip2:
+                st.caption("Các file CSV sẽ nằm trong ZIP:")
+                for k in completed_queries.keys():
+                    st.text(f"📄 {k}.csv")
