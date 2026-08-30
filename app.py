@@ -179,7 +179,7 @@ with tab_manager:
             for query_id, info in list(db.items()):
                 status_color = info["status"]
                 with st.expander(f"{status_color} **{query_id}** ({info['type']}) - Người tạo: {info.get('assigned_to', 'N/A')}"):
-                    st.markdown(**Miêu tả:**\n{info['description']})
+                    st.markdown(f"**Miêu tả:**\n{info['description']}")
                     if info['raw_data']:
                         st.caption("Dữ liệu truy vấn kèm theo:")
                         st.code(info['raw_data'])
