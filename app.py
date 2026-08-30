@@ -218,7 +218,7 @@ def parse_raw_data(raw_data):
             current_vid = None 
     return results
 
-def validate_csv_content(content_str, task_type):
+def validate_csv_content(content_str, task_type, num_events=None):
     raw_lines = [line.strip("\r") for line in content_str.split("\n") if line.strip("\r")]
     errors = []
     if len(raw_lines) != 100: errors.append(f"❌ Sai số dòng: Đang có {len(raw_lines)} dòng (Yêu cầu: 100).")
@@ -226,6 +226,12 @@ def validate_csv_content(content_str, task_type):
         parts = line.split(",")
         if task_type == "Textual KIS" and len(parts) != 2: errors.append(f"❌ Dòng {idx+1} sai định dạng KIS.")
         elif task_type == "Q&A" and len(parts) < 3: errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A.")
+        elif task_type == "TRAKE":
+            expected = (num_events + 1) if num_events else None
+            if expected and len(parts) != expected:
+                errors.append(f"❌ Dòng {idx+1} sai định dạng TRAKE (cần {expected} cột: video + {num_events} frame, đang có {len(parts)}).")
+            elif not expected and len(parts) < 3:
+                errors.append(f"❌ Dòng {idx+1} sai định dạng TRAKE (cần video + ít nhất 2 frame).")
     return len(errors) == 0, errors
 
 def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100, step=5):
@@ -260,6 +266,24 @@ def generate_range_csv(video_id, start_frame, end_frame, is_qa, qa_answer, total
             frames.append(f)
             
     lines = [f"{video_id},{f},{qa_answer}" if is_qa else f"{video_id},{f}" for f in frames[:total_target]]
+    return "\n".join(lines)
+
+def generate_trake_csv(video_id, event_frames, total_target=100, step=5):
+    """Sinh nhiều biến thể của cả chuỗi N frame sự kiện (TRAKE): mỗi biến thể
+    dịch toàn bộ chuỗi frame gốc theo cùng một offset, giữ nguyên khoảng cách
+    tương đối giữa các event — giống 'tỏa tròn' nhưng áp dụng cho cả chuỗi."""
+    if not event_frames: return ""
+    seen, sequences = set(), []
+    base_seq = tuple(event_frames)
+    seen.add(base_seq); sequences.append(base_seq)
+    offset = step
+    while len(sequences) < total_target and offset < 100000:
+        for delta in (offset, -offset):
+            new_seq = tuple(f + delta for f in event_frames)
+            if all(f >= 0 for f in new_seq) and new_seq not in seen and len(sequences) < total_target:
+                seen.add(new_seq); sequences.append(new_seq)
+        offset += step
+    lines = [f"{video_id}," + ",".join(str(f) for f in seq) for seq in sequences[:total_target]]
     return "\n".join(lines)
 
 def time_to_sec(t_str):
@@ -369,13 +393,20 @@ if selected_menu == "📋 Quản Lý Query":
         with st.container(border=True):
             st.subheader("➕ Thêm Query Mới")
             q_name = st.text_input("Tên Query:", placeholder="VD: query-p2-14-kis")
-            q_type = st.radio("Loại bài:", ["Textual KIS", "Q&A"], horizontal=True)
+            q_type = st.radio("Loại bài:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
+            q_num_events = None
+            if q_type == "TRAKE":
+                q_num_events = st.number_input("Số lượng events (N) trong chuỗi:", min_value=2, max_value=20, value=4)
             q_desc = st.text_area("Miêu tả video:", placeholder="VĐV mặc áo xanh đua xe...")
             q_raw_data = st.text_area("Dữ liệu truy vấn thô (Dán Top K):", height=130)
             
             if st.button("🚀 Tạo Query Mới", type="primary", use_container_width=True):
                 if q_name:
-                    db[q_name] = {"type": q_type, "description": q_desc, "raw_data": q_raw_data, "status": "🔴 Chưa làm", "assigned_to": current_member, "csv_content": ""}
+                    db[q_name] = {
+                        "type": q_type, "description": q_desc, "raw_data": q_raw_data,
+                        "status": "🔴 Chưa làm", "assigned_to": current_member, "csv_content": "",
+                        "num_events": int(q_num_events) if q_num_events else None,
+                    }
                     save_db(db)
                     st.toast(f"Đã thêm query {q_name} thành công!", icon="✅")
                     st.rerun()
@@ -390,8 +421,11 @@ if selected_menu == "📋 Quản Lý Query":
             for q_id, info in list(db.items()):
                 with st.container(border=True):
                     c1, c2 = st.columns([0.8, 0.2])
+                    type_label = info['type']
+                    if info['type'] == "TRAKE" and info.get("num_events"):
+                        type_label = f"TRAKE · N={info['num_events']}"
                     c1.markdown(
-                        f"{status_badge(info['status'])} &nbsp; **`{q_id}`** <span class='tag-type'>{info['type']}</span>",
+                        f"{status_badge(info['status'])} &nbsp; **`{q_id}`** <span class='tag-type'>{type_label}</span>",
                         unsafe_allow_html=True
                     )
                     c1.caption(f"📖 {info['description']}  |  *(Tạo bởi: {info.get('assigned_to', 'Ẩn danh')})*")
@@ -406,7 +440,7 @@ elif selected_menu == "📤 Upload Nộp Bài":
     up_file = st.file_uploader("Kéo thả file CSV nộp bài vào đây:", type=['csv'])
     if up_file and target_q:
         file_str = up_file.getvalue().decode("utf-8").strip()
-        is_valid, errs = validate_csv_content(file_str, db[target_q]["type"])
+        is_valid, errs = validate_csv_content(file_str, db[target_q]["type"], db[target_q].get("num_events"))
         if is_valid:
             if st.button("Cập nhật tiến độ", type="primary"):
                 db[target_q].update({"csv_content": file_str, "status": "🟢 Hoàn thành"})
@@ -417,7 +451,11 @@ elif selected_menu == "📤 Upload Nộp Bài":
 elif selected_menu == "🛠️ Tool Spam Nhanh":
     page_header("🛠️", "Tool Spam Keyframe Tự Do", "Công cụ độc lập không lưu vào DB — dùng để sinh file test nhanh với tùy chỉnh nâng cao.")
     
-    tab_point, tab_range = st.tabs(["🎯 Spam Tỏa Tròn (Point Expand)", "⏱️ Spam Khoảng Thời Gian (Time Range)"])
+    tab_point, tab_range, tab_trake = st.tabs([
+        "🎯 Spam Tỏa Tròn (Point Expand)",
+        "⏱️ Spam Khoảng Thời Gian (Time Range)",
+        "🔗 Spam Chuỗi Sự Kiện (TRAKE)"
+    ])
     
     with tab_point:
         col_inp, col_cfg = st.columns([1, 1])
@@ -461,6 +499,28 @@ elif selected_menu == "🛠️ Tool Spam Nhanh":
                     csv_out2 = generate_range_csv(s2_vid, frame_start, frame_end, s2_type == "Q&A", s2_qa, s2_total)
                     st.success(f"Tạo thành công {s2_total} dòng!")
                     st.download_button("📥 Tải File CSV Xong", data=csv_out2, file_name=f"spam_range_{s2_vid}.csv", mime="text/csv", use_container_width=True)
+
+    with tab_trake:
+        st.caption("Format: `<Tên file video>, <Frame ID_1>, <Frame ID_2>, ..., <Frame ID_N>` — thứ tự Frame ID phải theo đúng thứ tự thời gian của các event.")
+        col_inp3, col_cfg3 = st.columns([1, 1])
+        with col_inp3:
+            s3_vid = st.text_input("Video ID (VD: L10_V001):", key="s3_vid")
+            s3_frames = st.text_area(
+                "Frame ID các event, theo thứ tự (cách nhau dấu phẩy):",
+                key="s3_frames", placeholder="1200, 1850, 2100, 2450"
+            )
+        with col_cfg3:
+            s3_total = st.number_input("Tổng số dòng muốn tạo:", min_value=1, max_value=500, value=100, key="s3_total")
+            s3_step = st.number_input("Bước nhảy (Step, dịch cả chuỗi):", min_value=1, max_value=50, value=5, key="s3_step")
+
+            if st.button("🚀 Xuất CSV (Chuỗi Sự Kiện)", type="primary", use_container_width=True, key="s3_btn"):
+                parsed_events = [int(x) for x in re.findall(r'\d+', s3_frames)]
+                if not s3_vid or len(parsed_events) < 2:
+                    st.error("Thiếu Video ID hoặc cần ít nhất 2 Frame ID sự kiện theo thứ tự.")
+                else:
+                    csv_out3 = generate_trake_csv(s3_vid, parsed_events, s3_total, s3_step)
+                    st.success(f"Tạo thành công {s3_total} dòng, mỗi dòng {len(parsed_events)} event!")
+                    st.download_button("📥 Tải File CSV Xong", data=csv_out3, file_name=f"spam_trake_{s3_vid}.csv", mime="text/csv", use_container_width=True)
 
 # ==========================================
 # TỔNG HỢP & XUẤT FILE (ZIP)
