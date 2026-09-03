@@ -20,6 +20,14 @@ SUFFIX_MAP = {"Textual KIS": "kis", "Q&A": "qa", "TRAKE": "trake"}
 MAX_ANSWER_LEN = 100
 DEFAULT_FOLDER_ID = "1de5La8Dr0R7coCblvwFGpU_1_OSueJF2"
 
+# 💡 TỪ ĐIỂN ÁNH XẠ: ĐIỀN ID TỪNG VIDEO CỦA DRIVE VÀO ĐÂY ĐỂ SEARCH NHANH
+# (Trong thực tế thi đấu, bạn có thể load từ 1 file mapping.csv của đội)
+GDRIVE_MAPPING = {
+    "L21_V008": "ID_FILE_DRIVE_CUA_V008",  # VD: "1abc_XYZ123..."
+    "L21_V009": "ID_FILE_DRIVE_CUA_V009",
+    # Thêm các video khác vào đây...
+}
+
 # ==========================================
 # THEME — HỆ THỐNG DESIGN SYSTEM (UI UX PRO MAX)
 # ==========================================
@@ -33,21 +41,17 @@ st.markdown("""
     --bg-card: #151C2C;
     --bg-card-hover: #1E293B;
     --border-color: #2A3441;
-    
     --accent-cyan: #06B6D4;
     --accent-indigo: #6366F1;
     --success: #10B981;
     --warning: #F59E0B;
     --danger: #EF4444;
-    
     --text-main: #F8FAFC;
     --text-muted: #94A3B8;
-    
     --font-sans: 'Inter', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Base Styles */
 html, body, [class^="css"], [class*=" css"] { font-family: var(--font-sans); color: var(--text-main); }
 [data-testid="stAppViewContainer"] { background: var(--bg-main); }
 [data-testid="stHeader"] { background: transparent; }
@@ -55,13 +59,8 @@ html, body, [class^="css"], [class*=" css"] { font-family: var(--font-sans); col
 h1, h2, h3, h4 { font-weight: 700 !important; letter-spacing: -0.02em; }
 p, span, div { color: var(--text-main); }
 .stCaption, [data-testid="stCaptionContainer"] p { color: var(--text-muted) !important; font-size: 0.85rem !important; }
+code, .mono-text, .stTextInput input, .stTextArea textarea, .stNumberInput input { font-family: var(--font-mono) !important; }
 
-/* Typography Mono for Data */
-code, .mono-text, .stTextInput input, .stTextArea textarea, .stNumberInput input {
-    font-family: var(--font-mono) !important;
-}
-
-/* Cards & Containers */
 [data-testid="stVerticalBlockBorderWrapper"] {
     background: var(--bg-card);
     border: 1px solid var(--border-color) !important;
@@ -70,7 +69,6 @@ code, .mono-text, .stTextInput input, .stTextArea textarea, .stNumberInput input
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
-/* Inputs */
 .stTextInput input, .stTextArea textarea, .stNumberInput input {
     background: rgba(11, 15, 25, 0.5) !important;
     border: 1px solid var(--border-color) !important;
@@ -82,9 +80,7 @@ code, .mono-text, .stTextInput input, .stTextArea textarea, .stNumberInput input
     border-color: var(--accent-cyan) !important;
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2) !important;
 }
-div[role="radiogroup"] input { accent-color: var(--accent-cyan); }
 
-/* Buttons */
 .stButton > button, .stDownloadButton > button {
     border-radius: 8px; font-weight: 600; border: 1px solid var(--border-color);
     background: var(--bg-card); color: var(--text-main); transition: all 0.2s;
@@ -97,24 +93,16 @@ div[role="radiogroup"] input { accent-color: var(--accent-cyan); }
 .stButton > button[kind="primary"]:hover { filter: brightness(1.15); transform: translateY(-1px); }
 .stButton > button[disabled] { opacity: 0.7; color: var(--text-muted) !important; border-color: var(--border-color) !important; }
 
-/* Sidebar Navigation Buttons */
-[data-testid="stSidebar"] .stButton > button {
-    width: 100%; justify-content: flex-start; padding: 0.75rem 1rem;
-    background: transparent; border: 1px solid transparent; text-align: left;
-}
+[data-testid="stSidebar"] .stButton > button { width: 100%; justify-content: flex-start; padding: 0.75rem 1rem; background: transparent; border: 1px solid transparent; text-align: left; }
 [data-testid="stSidebar"] .stButton > button:hover { background: rgba(255,255,255,0.05); }
-
-/* Progress Bar & Metrics */
 [data-testid="stProgress"] > div > div { background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo)); }
 [data-testid="stMetricValue"] { font-family: var(--font-mono) !important; color: var(--accent-cyan) !important; }
 
-/* Custom UI Elements */
 .header-eyebrow { font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
 .badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 99px; }
 .badge-done { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
 .badge-todo { background: rgba(244, 63, 94, 0.15); color: var(--danger); border: 1px solid rgba(244, 63, 94, 0.3); }
 .badge-inprogress { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
-
 .dot { width: 6px; height: 6px; border-radius: 50%; }
 .badge-done .dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
 .badge-todo .dot { background: var(--danger); }
@@ -140,13 +128,9 @@ def status_badge(status_str):
 # ==========================================
 # BACKEND LOGIC
 # ==========================================
-def clean_video_id(vid):
-    return re.sub(r'\.\w{2,4}$', '', vid.strip()) if vid else vid
-
+def clean_video_id(vid): return re.sub(r'\.\w{2,4}$', '', vid.strip()) if vid else vid
 def build_csv_row(fields):
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=",", quoting=csv.QUOTE_MINIMAL, lineterminator="")
-    writer.writerow(fields)
+    buf = io.StringIO(); csv.writer(buf, delimiter=",", quoting=csv.QUOTE_MINIMAL, lineterminator="").writerow(fields)
     return buf.getvalue()
 
 def load_db():
@@ -155,7 +139,6 @@ def load_db():
             with open(DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
         except: pass
     return {}
-
 def save_db(db):
     with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, ensure_ascii=False, indent=2)
 
@@ -169,7 +152,6 @@ def load_submission_log():
             with open(SUBMISSION_LOG_FILE, "r", encoding="utf-8") as f: return json.load(f)
         except: pass
     return []
-
 def save_submission_log(log):
     with open(SUBMISSION_LOG_FILE, "w", encoding="utf-8") as f: json.dump(log, f, ensure_ascii=False, indent=2)
 
@@ -180,8 +162,7 @@ def validate_csv_content(content_str, task_type, num_events=None):
     errors = []
     if len(rows) != 100: errors.append(f"❌ Sai số dòng: Đang có {len(rows)} dòng (Yêu cầu chính xác 100).")
     for idx, parts in enumerate(rows):
-        if task_type == "Textual KIS" and len(parts) != 2:
-            errors.append(f"❌ Dòng {idx+1}: KIS cần đúng 2 cột (video_id, frame_id)."); break
+        if task_type == "Textual KIS" and len(parts) != 2: errors.append(f"❌ Dòng {idx+1}: KIS cần đúng 2 cột (video_id, frame_id)."); break
         elif task_type == "Q&A":
             if len(parts) < 3: errors.append(f"❌ Dòng {idx+1}: Q&A cần 3 cột."); break
             elif len(parts[2]) > MAX_ANSWER_LEN: errors.append(f"❌ Dòng {idx+1}: Câu trả lời vượt quá {MAX_ANSWER_LEN} ký tự."); break
@@ -196,12 +177,10 @@ def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100
     base_quota = total_target // len(input_frames)
     remainder = total_target % len(input_frames)
     quotas = [base_quota + (1 if i < remainder else 0) for i in range(len(input_frames))]
-    
     seen, final_results = set(), []
     for i, base_frame in enumerate(input_frames):
         curr, offset = [], step
-        if (video_id, base_frame) not in seen:
-            seen.add((video_id, base_frame)); curr.append((video_id, base_frame))
+        if (video_id, base_frame) not in seen: seen.add((video_id, base_frame)); curr.append((video_id, base_frame))
         while len(curr) < quotas[i]:
             for df in [offset, -offset]:
                 f_new = base_frame + df
@@ -255,16 +234,15 @@ def auto_extract_data(raw_text):
     return vid, ", ".join(frames[:10])
 
 def extract_gdrive_id(url):
-    """Trích xuất ID Folder hoặc File từ Link Drive"""
     if "drive.google.com" in url:
         match_folder = re.search(r'/folders/([a-zA-Z0-9_-]+)', url)
-        if match_folder: return match_folder.group(1), "folder"
+        if match_folder: return match_folder.group(1)
         match_file = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
-        if match_file: return match_file.group(1), "file"
-    return url.strip(), "unknown"
+        if match_file: return match_file.group(1)
+    return url.strip()
 
 # ==========================================
-# AUTH SCREEN (CHỌN THÀNH VIÊN)
+# AUTH SCREEN
 # ==========================================
 if st.session_state.current_member is None:
     st.markdown("<br><br><br>", unsafe_allow_html=True)
@@ -277,8 +255,7 @@ if st.session_state.current_member is None:
             st.markdown("<p style='color:var(--text-muted); margin-bottom:20px;'>Hệ thống quản lý truy vấn đa phương tiện</p>", unsafe_allow_html=True)
             selected_name = st.selectbox("Xác thực thành viên tác chiến:", TEAM_MEMBERS)
             if st.button("🚀 KHỞI ĐỘNG HỆ THỐNG", type="primary", use_container_width=True):
-                st.session_state.current_member = selected_name
-                st.rerun()
+                st.session_state.current_member = selected_name; st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
@@ -308,10 +285,8 @@ with st.sidebar:
     for item in NAV_ITEMS:
         is_active = st.session_state.menu == item
         if st.button(item, key=f"nav_{item}", type="primary" if is_active else "secondary"):
-            st.session_state.menu = item
-            st.rerun()
+            st.session_state.menu = item; st.rerun()
 
-    # MÁY TÍNH TIMECODE (Công cụ Sidebar)
     st.divider()
     st.markdown("<div class='header-eyebrow'>⏱️ TIME ↔ FRAME ENGINE (25fps)</div>", unsafe_allow_html=True)
     with st.container(border=True):
@@ -324,16 +299,13 @@ with st.sidebar:
                 else: m, s = 0, 0
                 f_result = (m * 60 + s) * 25
                 st.markdown(f"<div style='font-family:var(--font-mono); font-size:12px; color:var(--text-muted); margin-bottom: 2px;'>Frame ID tương đương:</div> <div style='color:var(--accent-cyan); font-size:26px; font-weight:700; font-family:var(--font-mono); line-height:1;'>{f_result}</div>", unsafe_allow_html=True)
-            except:
-                st.markdown("<span style='color:var(--danger); font-size: 13px;'>Sai định dạng</span>", unsafe_allow_html=True)
+            except: st.markdown("<span style='color:var(--danger); font-size: 13px;'>Sai định dạng</span>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     with st.expander("🛠️ Cài đặt hệ thống"):
-        if st.button("🔄 Đổi tài khoản", use_container_width=True):
-            st.session_state.current_member = None; st.rerun()
+        if st.button("🔄 Đổi tài khoản", use_container_width=True): st.session_state.current_member = None; st.rerun()
         if st.checkbox("Mở khóa Reset DB"):
-            if st.button("🧹 Xóa sạch Database", use_container_width=True):
-                st.session_state.db = {}; save_db({}); st.rerun()
+            if st.button("🧹 Xóa sạch Database", use_container_width=True): st.session_state.db = {}; save_db({}); st.rerun()
 
 menu = st.session_state.menu
 
@@ -358,9 +330,8 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                 if not q_name: st.error("Tên Query không được để trống!")
                 else:
                     db[q_name] = {
-                        "type": q_type, "description": q_desc, "raw_data": q_raw,
-                        "status": "🔴 Chưa làm", "assigned_to": "None", "csv_content": "",
-                        "num_events": int(q_num) if q_num else None
+                        "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
+                        "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_num else None
                     }
                     save_db(db); st.toast("Đã thêm thành công!", icon="✅"); st.rerun()
 
@@ -387,8 +358,7 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                             if info.get('assigned_to') == current_member:
                                 if st.button("Nhả Câu", key=f"unclaim_{q_id}", use_container_width=True):
                                     db[q_id]["status"] = "🔴 Chưa làm"; save_db(db); st.rerun()
-                            else:
-                                st.button(f"🔒 Locked ({info.get('assigned_to')})", key=f"lock_{q_id}", disabled=True, use_container_width=True)
+                            else: st.button(f"🔒 Locked ({info.get('assigned_to')})", key=f"lock_{q_id}", disabled=True, use_container_width=True)
                         elif info['status'] == "🟢 Hoàn thành":
                             st.button(f"✅ Đã xong", key=f"done_{q_id}", disabled=True, use_container_width=True)
                     with c_del:
@@ -402,8 +372,7 @@ elif menu == "⚙️ Auto-Generator (Spam)":
     if not active_qs:
         st.success("Tất cả các Query đều đã hoàn thành hoặc chưa có Query nào!")
     else:
-        # TÍCH HỢP MÀN HÌNH CHIA ĐÔI: BÊN TRÁI LÀ SPAM, BÊN PHẢI LÀ MONITOR (DRIVE PLAYER) CÓ TÍNH NĂNG SEARCH
-        col_tools, col_player = st.columns([1.4, 1.4], gap="large")
+        col_tools, col_player = st.columns([1.5, 1.4], gap="large")
         
         with col_tools:
             selected_q = st.selectbox("🎯 Chọn Query đang tác chiến:", list(active_qs.keys()))
@@ -452,7 +421,6 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                         else: st.error("Thời gian không hợp lệ!")
 
             with t3:
-                st.info("Áp dụng riêng cho loại bài TRAKE (chuỗi sự kiện).")
                 c1, c2 = st.columns([1, 1])
                 with c1:
                     vid3 = st.text_input("Video ID:", value=pre_vid, key="v3")
@@ -462,58 +430,65 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("🚀 TẠO & LƯU DB (HOÀN THÀNH)", type="primary", use_container_width=True, key="b3"):
                         frames_list = [int(x) for x in re.findall(r'\d+', f3)]
-                        if len(frames_list) != info.get('num_events', len(frames_list)):
-                            st.error(f"Cần nhập đúng {info.get('num_events')} frame!")
+                        if len(frames_list) != info.get('num_events', len(frames_list)): st.error(f"Cần nhập đúng {info.get('num_events')} frame!")
                         else:
                             csv_str = generate_trake_csv(vid3, frames_list, 100, step3)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
                             save_db(db); st.success("Thành công!"); st.balloons(); st.rerun()
 
-        # ==================== KHU VỰC LIVE MONITOR CÓ SEARCH ====================
+        # ==================== KHU VỰC LIVE MONITOR TÍCH HỢP SEARCH ====================
         with col_player:
-            st.markdown("<h4 style='color:var(--accent-cyan);'>📺 Live Monitor & Search</h4>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                <h4 style="color:var(--accent-cyan); margin:0;">📺 Live Monitor</h4>
+                <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">Folder ID: {DEFAULT_FOLDER_ID[:8]}...</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             with st.container(border=True):
-                # 1. Khung điền Link tổng
-                drive_link = st.text_input(
-                    "📁 Link Folder Tổng (Hoặc link File riêng):", 
-                    value=f"https://drive.google.com/drive/folders/{DEFAULT_FOLDER_ID}",
-                    help="Hệ thống mặc định mở Folder Thư viện. Nếu muốn xem 1 video cụ thể, dán link file đó vào đây."
+                # 1. THANH SEARCH SIÊU TỐC ĐỘ (Nằm thẳng trong box Monitor)
+                search_vid = st.text_input(
+                    "🔍 NHẬP TÊN VIDEO ĐỂ TÌM & PHÁT (VD: L21_V008)", 
+                    placeholder="Gõ tên video vào đây...",
+                    help="Hệ thống sẽ tra cứu trong GDRIVE_MAPPING để mở trực tiếp video này."
                 )
-                gid, gtype = extract_gdrive_id(drive_link) if drive_link else ("", "")
-
-                # 2. Khung Search thông minh (Bypass iframe restriction)
-                if gtype == "folder":
-                    search_vid = st.text_input("🔍 Tìm nhanh Video (Mở sang tab kết quả):", placeholder="VD: L26_V021")
-                    if search_vid:
-                        # Cú pháp search chính xác của Google Drive bên trong 1 folder cụ thể
-                        search_url = f"https://drive.google.com/drive/search?q=%22{search_vid}%22%20parent:{gid}"
-                        st.markdown(f"""
-                        <a href="{search_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo)); color: white; font-family: var(--font-mono); font-weight: bold; font-size: 14px; border-radius: 8px; text-decoration: none; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(6,182,212,0.3); transition: all 0.2s;">
-                            🚀 TÌM & MỞ [{search_vid}] TRÊN GOOGLE DRIVE
-                        </a>
-                        """, unsafe_allow_html=True)
                 
-                # 3. Iframe Player
-                if drive_link:
-                    # Chỉnh chiều cao phù hợp với không gian còn lại
-                    if gtype == "folder":
-                        iframe_src = f"https://drive.google.com/embeddedfolderview?id={gid}#grid"
-                        height = 400 if not search_vid else 310
+                # 2. XỬ LÝ LOGIC IFRAME DỰA VÀO THANH SEARCH
+                iframe_src = ""
+                player_type = ""
+                
+                if search_vid:
+                    clean_search = clean_video_id(search_vid).strip()
+                    # Tra từ điển Mapping
+                    vid_drive_id = GDRIVE_MAPPING.get(clean_search)
+                    
+                    if vid_drive_id:
+                        # CHUYỂN NGAY LẬP TỨC SANG CHẾ ĐỘ PHÁT ĐƠN (SINGLE FILE)
+                        iframe_src = f"https://drive.google.com/file/d/{vid_drive_id}/preview"
+                        player_type = f"FILE PREVIEW - {clean_search}"
                     else:
-                        iframe_src = f"https://drive.google.com/file/d/{gid}/preview"
-                        height = 300
-                        
-                    st.markdown(f"""
-                    <div style="border: 1px solid var(--accent-cyan); border-radius: 8px; overflow: hidden; box-shadow: 0 0 15px rgba(6,182,212,0.15);">
-                        <div style="background: var(--bg-sidebar); padding: 4px 12px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan); display: flex; justify-content: space-between;">
-                            <span>🔴 TACTICAL PREVIEW</span>
-                            <span>[TYPE: {gtype.upper()}]</span>
-                        </div>
-                        <iframe src="{iframe_src}" width="100%" height="{height}" style="border:none;" allow="autoplay"></iframe>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        st.warning(f"⚠️ Chưa có dữ liệu Drive ID cho `{clean_search}` trong GDRIVE_MAPPING. Vẫn hiển thị Thư mục.")
+                        # Rơi lại về chế độ Thư mục
+                        iframe_src = f"https://drive.google.com/embeddedfolderview?id={DEFAULT_FOLDER_ID}#grid"
+                        player_type = "FOLDER VIEW"
                 else:
-                    st.info("Dán link Google Drive vào ô trên để xem Video trực tiếp.")
+                    # Chế độ Thư mục mặc định
+                    iframe_src = f"https://drive.google.com/embeddedfolderview?id={DEFAULT_FOLDER_ID}#grid"
+                    player_type = "FOLDER VIEW"
+
+                # 3. RENDER KHUNG HÌNH (GIAO DIỆN CYBERPUNK)
+                st.markdown(f"""
+                <div style="border: 1px solid var(--accent-cyan); border-radius: 8px; overflow: hidden; box-shadow: 0 0 20px rgba(6,182,212,0.15); margin-top: 10px;">
+                    <div style="background: var(--bg-sidebar); padding: 6px 12px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan); display: flex; justify-content: space-between;">
+                        <span style="display:flex; align-items:center; gap:6px;">
+                            <span style="width:8px; height:8px; background:var(--danger); border-radius:50%; box-shadow:0 0 6px var(--danger);"></span>
+                            TACTICAL FEED
+                        </span>
+                        <span>[ {player_type} ]</span>
+                    </div>
+                    <iframe src="{iframe_src}" width="100%" height="340" style="border:none;" allow="autoplay"></iframe>
+                </div>
+                """, unsafe_allow_html=True)
 
 elif menu == "📤 Cập Nhật External CSV":
     page_header("Validation & Manual Upload", "Tải lên file CSV bạn tự code ngoài. Hệ thống sẽ quét lỗi tự động.")
@@ -529,12 +504,10 @@ elif menu == "📤 Cập Nhật External CSV":
                     db[target_q].update({"csv_content": content, "status": "🟢 Hoàn thành", "completed_by": current_member})
                     save_db(db); st.rerun()
             else:
-                st.error("❌ Phát hiện lỗi Format:")
-                for e in errs: st.write(e)
+                for e in errs: st.error(e)
 
 elif menu == "📦 Kiểm Tra & Đóng Gói":
     page_header("Package & Submit", "Đóng gói toàn bộ file ZIP nộp bài và Báo cáo lỗi (Feedback Loop).")
-    
     done_qs = {k: v for k, v in db.items() if v["status"] == "🟢 Hoàn thành"}
     missing_qs = {k: v for k, v in db.items() if v["status"] != "🟢 Hoàn thành"}
     
@@ -543,8 +516,7 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
     with col1:
         with st.container(border=True):
             st.markdown("#### 🗜️ Tải File ZIP Nộp Bài")
-            if not done_qs:
-                st.warning("Chưa có Query nào hoàn thành để nén ZIP.")
+            if not done_qs: st.warning("Chưa có Query nào hoàn thành để nén ZIP.")
             else:
                 zip_name = st.text_input("Tên file nén:", value="AIC_Submission_Team.zip")
                 if not zip_name.endswith('.zip'): zip_name += '.zip'
@@ -581,8 +553,7 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
                 with c_btn:
                     if st.button("❌ Báo Sai", key=f"redo_{k}", help="Nếu BTC chấm sai, bấm nút này để yêu cầu team làm lại!"):
                         db[k]["status"] = "🔴 Cần làm lại"; db[k]["csv_content"] = ""; save_db(db); st.rerun()
-                    if st.button("👁️ Xem", key=f"view_{k}"):
-                        st.session_state.view_query = k
+                    if st.button("👁️ Xem", key=f"view_{k}"): st.session_state.view_query = k
 
         if st.session_state.get("view_query") in db:
             st.markdown(f"<br>**Nội dung CSV của `{st.session_state.view_query}`:**", unsafe_allow_html=True)
@@ -598,6 +569,6 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
 # ==========================================
 st.markdown("""
 <div style='text-align:center; padding-top:40px; color:var(--text-muted); font-size:12px; font-family:var(--font-mono);'>
-    AIC Workspace 2026 • Tactical Edition + Smart Search Bypass
+    AIC Workspace 2026 • Tactical Edition + Integrated Search Bar
 </div>
 """, unsafe_allow_html=True)
