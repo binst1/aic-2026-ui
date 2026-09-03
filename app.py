@@ -1,940 +1,435 @@
-import os
-import re
-import csv
-import json
-import io
-import zipfile
-from datetime import datetime
-import pandas as pd
-import streamlit as st
-
-# ==========================================
-# CẤU HÌNH TRANG
-# ==========================================
-st.set_page_config(
-    page_title="AIC 2026 Workspace",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-DB_FILE = "task_database.json"
-SUBMISSION_LOG_FILE = "submission_log.json"
-TEAM_MEMBERS = ["VThành", "LThiện", "PThiện", "Nguyên", "NThành"]
-SUFFIX_MAP = {"Textual KIS": "kis", "Q&A": "qa", "TRAKE": "trake"}
-MAX_ANSWER_LEN = 100
-
-# ==========================================
-# SYSTEM DESIGN TOKENS & CUSTOM CSS (UI UX PRO MAX)
-# ==========================================
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Be+Vietnam+Pro:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap');
-
-:root {
-  --bg-dark: #090D16;
-  --bg-sidebar: #0D1322;
-  --bg-card: #111827;
-  --bg-card-hover: #162032;
-  --border-color: #1F2937;
-  --border-focus: #374151;
+<!DOCTYPE html>
+<html lang="vi" class="dark scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIC 2026 - AI Retrieval Operations Center</title>
   
-  --primary-cyan: #06B6D4;
-  --primary-indigo: #6366F1;
-  --accent-glow: rgba(6, 182, 212, 0.15);
+  <!-- Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   
-  --success: #10B981;
-  --success-bg: rgba(16, 185, 129, 0.12);
-  --warning: #F59E0B;
-  --warning-bg: rgba(245, 158, 11, 0.12);
-  --danger: #EF4444;
-  --danger-bg: rgba(239, 68, 68, 0.12);
-  
-  --text-white: #F8FAFC;
-  --text-muted: #94A3B8;
-  --text-subtle: #64748B;
-  
-  --font-heading: 'Plus Jakarta Sans', sans-serif;
-  --font-body: 'Be Vietnam Pro', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-}
-
-/* Global Reset & Styling */
-html, body, [class^="css"], [class*=" css"] {
-  font-family: var(--font-body);
-}
-
-[data-testid="stAppViewContainer"] {
-  background: var(--bg-dark);
-  color: var(--text-white);
-}
-
-[data-testid="stHeader"] {
-  background: transparent;
-}
-
-[data-testid="stSidebar"] {
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
-}
-
-/* Typography Hierarchy */
-h1, h2, h3, h4 {
-  font-family: var(--font-heading) !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em;
-  color: var(--text-white) !important;
-}
-
-p, span, label, div {
-  color: var(--text-white);
-}
-
-.stCaption, [data-testid="stCaptionContainer"] {
-  color: var(--text-muted) !important;
-  font-size: 13px;
-}
-
-/* Surface Cards & Containers */
-[data-testid="stVerticalBlockBorderWrapper"] {
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 12px !important;
-  padding: 16px !important;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
-  border-color: var(--border-focus) !important;
-}
-
-/* Form Inputs & Controls */
-.stTextInput input, .stTextArea textarea, .stNumberInput input {
-  background: #0B1120 !important;
-  color: var(--text-white) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 8px !important;
-  font-family: var(--font-mono) !important;
-  font-size: 13.5px !important;
-  transition: all 0.2s ease;
-}
-
-.stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
-  border-color: var(--primary-cyan) !important;
-  box-shadow: 0 0 0 3px var(--accent-glow) !important;
-}
-
-[data-baseweb="select"] > div {
-  background: #0B1120 !important;
-  border-color: var(--border-color) !important;
-  border-radius: 8px !important;
-}
-
-/* Buttons Styling */
-.stButton > button, .stDownloadButton > button {
-  border-radius: 8px !important;
-  border: 1px solid var(--border-color) !important;
-  font-family: var(--font-body) !important;
-  font-weight: 600 !important;
-  font-size: 14px !important;
-  color: var(--text-white) !important;
-  background: var(--bg-card) !important;
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  padding: 8px 16px !important;
-}
-
-.stButton > button:hover, .stDownloadButton > button:hover {
-  border-color: var(--primary-cyan) !important;
-  color: var(--primary-cyan) !important;
-  transform: translateY(-1px);
-}
-
-.stButton > button[kind="primary"] {
-  background: linear-gradient(135deg, var(--primary-cyan), var(--primary-indigo)) !important;
-  color: #FFFFFF !important;
-  border: none !important;
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25) !important;
-}
-
-.stButton > button[kind="primary"]:hover {
-  filter: brightness(1.15);
-  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.35) !important;
-  color: #FFFFFF !important;
-}
-
-/* Sidebar Navigation Items */
-[data-testid="stSidebar"] .stButton > button {
-  justify-content: flex-start !important;
-  text-align: left !important;
-  padding: 10px 14px !important;
-  font-size: 14px !important;
-  border-radius: 8px !important;
-  margin-bottom: 4px !important;
-  width: 100% !important;
-}
-
-[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
-  background: transparent !important;
-  border: 1px solid transparent !important;
-  color: var(--text-muted) !important;
-}
-
-[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-white) !important;
-}
-
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-  background: rgba(6, 182, 212, 0.12) !important;
-  border: 1px solid var(--primary-cyan) !important;
-  color: var(--primary-cyan) !important;
-  box-shadow: none !important;
-}
-
-/* Metric Display */
-[data-testid="stMetric"] {
-  background: #0B1120;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 10px 14px;
-}
-
-[data-testid="stMetricValue"] {
-  font-family: var(--font-mono) !important;
-  font-weight: 700 !important;
-  color: var(--primary-cyan) !important;
-}
-
-/* Status Badges & Pills */
-.badge-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 999px;
-  letter-spacing: 0.02em;
-}
-
-.badge-done {
-  background: var(--success-bg);
-  color: var(--success);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.badge-todo {
-  background: var(--danger-bg);
-  color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.badge-done .status-dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
-.badge-todo .status-dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
-
-.tag-type {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 2px 8px;
-  margin-left: 6px;
-}
-
-/* Header & Banner Decor */
-.header-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--primary-cyan);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 2px;
-}
-
-.header-rule {
-  height: 2px;
-  width: 64px;
-  background: linear-gradient(90deg, var(--primary-cyan), var(--primary-indigo), transparent);
-  border-radius: 2px;
-  margin: 10px 0 20px 0;
-}
-
-/* Tabs Styling */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
-  gap: 8px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-[data-testid="stTabs"] button {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 13.5px;
-  color: var(--text-muted);
-  border-radius: 6px 6px 0 0;
-  padding: 8px 16px;
-}
-
-[data-testid="stTabs"] [aria-selected="true"] {
-  color: var(--primary-cyan) !important;
-  border-bottom: 2px solid var(--primary-cyan) !important;
-  background: rgba(6, 182, 212, 0.05);
-}
-
-/* Radio Custom Accent */
-div[role="radiogroup"] input {
-  accent-color: var(--primary-cyan);
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-def logo_svg(size=36):
-    """Logo Tactical Keyframe Search dạng Vector SVG sắc nét."""
-    return f"""
-    <svg width="{size}" height="{size}" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" rx="10" fill="url(#paint0_linear)"/>
-      <path d="M10 14V10a2 2 0 0 1 2-2h4" stroke="#06B6D4" stroke-width="2.2" stroke-linecap="round"/>
-      <path d="M30 14V10a2 2 0 0 0-2-2h-4" stroke="#06B6D4" stroke-width="2.2" stroke-linecap="round"/>
-      <path d="M10 26v4a2 2 0 0 0 2 2h4" stroke="#06B6D4" stroke-width="2.2" stroke-linecap="round"/>
-      <path d="M30 26v4a2 2 0 0 1-2 2h-4" stroke="#06B6D4" stroke-width="2.2" stroke-linecap="round"/>
-      <path d="M17 14.5L26 20L17 25.5V14.5Z" fill="url(#paint1_linear)"/>
-      <defs>
-        <linearGradient id="paint0_linear" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#0F172A"/>
-          <stop stop-offset="1" stop-color="#1E293B"/>
-        </linearGradient>
-        <linearGradient id="paint1_linear" x1="17" y1="14.5" x2="26" y2="25.5" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#06B6D4"/>
-          <stop stop-offset="1" stop-color="#6366F1"/>
-        </linearGradient>
-      </defs>
-    </svg>
-    """
-
-
-def page_header(icon, title, subtitle):
-    """Header tiêu chuẩn giao diện UI/UX Pro Max."""
-    st.markdown(f"""
-    <div style="margin-bottom: 8px;">
-      <div class="header-eyebrow">AIC 2026 WORKSPACE · TACTICAL STUDIO</div>
-      <h1 style="margin: 0; font-size: 26px; display: flex; align-items: center; gap: 10px;">
-        <span>{icon}</span> <span>{title}</span>
-      </h1>
-      <div style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">{subtitle}</div>
-      <div class="header-rule"></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def status_badge(status_str):
-    """Pill trạng thái có hiệu ứng LED nhỏ."""
-    is_done = "Hoàn thành" in status_str
-    css_class = "badge-done" if is_done else "badge-todo"
-    return f'<span class="badge-pill {css_class}"><span class="status-dot"></span>{status_str}</span>'
-
-
-# ==========================================
-# BACKEND LOGIC
-# ==========================================
-def clean_video_id(vid):
-    return re.sub(r'\.\w{2,4}$', '', vid.strip()) if vid else vid
-
-
-def build_csv_row(fields):
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=",", quoting=csv.QUOTE_MINIMAL, lineterminator="")
-    writer.writerow(fields)
-    return buf.getvalue()
-
-
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-
-def save_db(db):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
-
-
-if "db" not in st.session_state:
-    st.session_state.db = load_db()
-db = st.session_state.db
-
-if "current_member" not in st.session_state:
-    st.session_state.current_member = None
-
-
-def load_submission_log():
-    if os.path.exists(SUBMISSION_LOG_FILE):
-        try:
-            with open(SUBMISSION_LOG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
-
-
-def save_submission_log(log):
-    with open(SUBMISSION_LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(log, f, ensure_ascii=False, indent=2)
-
-
-if "submission_log" not in st.session_state:
-    st.session_state.submission_log = load_submission_log()
-
-
-def validate_csv_content(content_str, task_type, num_events=None):
-    rows = [row for row in csv.reader(io.StringIO(content_str)) if row]
-    errors = []
-    if len(rows) != 100:
-        errors.append(f"❌ Sai số dòng: Đang có {len(rows)} dòng (Yêu cầu chính xác: 100 dòng).")
-    for idx, parts in enumerate(rows):
-        if task_type == "Textual KIS" and len(parts) != 2:
-            errors.append(f"❌ Dòng {idx+1} sai định dạng KIS (Cần 2 cột: video_id, frame_id).")
-        elif task_type == "Q&A":
-            if len(parts) < 3:
-                errors.append(f"❌ Dòng {idx+1} sai định dạng Q&A (Cần video_id, frame_id, answer).")
-            elif len(parts) == 3 and len(parts[2]) > MAX_ANSWER_LEN:
-                errors.append(f"❌ Dòng {idx+1}: Câu trả lời dài {len(parts[2])} ký tự (Tối đa {MAX_ANSWER_LEN}).")
-        elif task_type == "TRAKE":
-            expected = (num_events + 1) if num_events else None
-            if expected and len(parts) != expected:
-                errors.append(f"❌ Dòng {idx+1} sai định dạng TRAKE (Cần {expected} cột: video + {num_events} frames).")
-            elif not expected and len(parts) < 3:
-                errors.append(f"❌ Dòng {idx+1} sai định dạng TRAKE (Cần ít nhất video + 2 frames).")
-    return len(errors) == 0, errors
-
-
-def generate_spam_csv(video_id, input_frames, is_qa, qa_answer, total_target=100, step=5):
-    if not input_frames:
-        return ""
-    base_quota = total_target // len(input_frames)
-    remainder = total_target % len(input_frames)
-    quotas = [base_quota + (1 if i < remainder else 0) for i in range(len(input_frames))]
-
-    seen, final_results = set(), []
-    for i, base_frame in enumerate(input_frames):
-        curr, offset = [], step
-        if (video_id, base_frame) not in seen:
-            seen.add((video_id, base_frame))
-            curr.append((video_id, base_frame))
-        while len(curr) < quotas[i]:
-            for df in [offset, -offset]:
-                f_new = base_frame + df
-                if f_new >= 0 and (video_id, f_new) not in seen and len(curr) < quotas[i]:
-                    seen.add((video_id, f_new))
-                    curr.append((video_id, f_new))
-            offset += step
-        final_results.extend(curr)
-
-    lines = [build_csv_row([v, f, qa_answer] if is_qa else [v, f]) for v, f in final_results[:total_target]]
-    return "\n".join(lines)
-
-
-def generate_range_csv(video_id, start_frame, end_frame, is_qa, qa_answer, total_target=100):
-    frames = []
-    if total_target == 1:
-        frames.append(start_frame)
-    else:
-        step = max(1, (end_frame - start_frame) / (total_target - 1))
-        for i in range(total_target):
-            f = int(round(start_frame + i * step))
-            frames.append(f)
-
-    lines = [build_csv_row([video_id, f, qa_answer] if is_qa else [video_id, f]) for f in frames[:total_target]]
-    return "\n".join(lines)
-
-
-def generate_trake_csv(video_id, event_frames, total_target=100, step=5):
-    if not event_frames:
-        return ""
-    seen, sequences = set(), []
-    base_seq = tuple(event_frames)
-    seen.add(base_seq)
-    sequences.append(base_seq)
-    offset = step
-    while len(sequences) < total_target and offset < 100000:
-        for delta in (offset, -offset):
-            new_seq = tuple(f + delta for f in event_frames)
-            if all(f >= 0 for f in new_seq) and new_seq not in seen and len(sequences) < total_target:
-                seen.add(new_seq)
-                sequences.append(new_seq)
-        offset += step
-    lines = [build_csv_row([video_id, *seq]) for seq in sequences[:total_target]]
-    return "\n".join(lines)
-
-
-def time_to_sec(t_str):
-    try:
-        h, m, s = map(int, t_str.split(':'))
-        return h * 3600 + m * 60 + s
-    except Exception:
-        return -1
-
-
-def create_zip_file(db_data):
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        for q_id, info in db_data.items():
-            if info.get("status") == "🟢 Hoàn thành" and info.get("csv_content"):
-                file_name = f"submission/{q_id}.csv"
-                zip_file.writestr(file_name, info["csv_content"])
-    return zip_buffer.getvalue()
-
-
-# ==========================================
-# MÀN HÌNH ĐỊNH DANH (LOGIN CARD)
-# ==========================================
-if st.session_state.current_member is None:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.4, 1])
-    with col2:
-        with st.container(border=True):
-            st.markdown(f"""
-            <div style="text-align: center; padding: 12px 0 8px 0;">
-                {logo_svg(48)}
-                <div class="header-eyebrow" style="margin-top: 12px;">AIC 2026 · TACTICAL WORKSPACE</div>
-                <h2 style="margin: 4px 0 0 0; font-size: 22px;">Chào mừng trở lại! 👋</h2>
-                <div style="color: var(--text-muted); font-size: 13.5px; margin-top: 4px;">
-                    Chọn thành viên trực ban để bắt đầu phiên làm việc
-                </div>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              primary: '#6366F1',
+              secondary: '#0EA5E9',
+              accent: '#10B981',
+              darkBg: '#0F172A',
+              cardBg: '#1E293B',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#0F172A] text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+  <!-- TOP NAVIGATION HEADER -->
+  <header class="sticky top-0 z-50 bg-[#0F172A]/90 backdrop-blur-md border-b border-slate-800 px-4 lg:px-6 py-3 transition-all">
+    <div class="max-w-[1760px] mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Logo & System Status -->
+      <div class="flex items-center gap-4 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-sky-500 to-emerald-500 p-[2px] cursor-pointer hover:shadow-lg hover:shadow-indigo-500/20 transition-all">
+            <div class="w-full h-full bg-slate-900 rounded-[10px] flex items-center justify-center">
+              <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a10 10 0 1 0 10 10H12V2z"></path>
+                <path d="M12 12L2.5 7.5"></path>
+                <path d="m12 12 8.5 4.5"></path>
+              </svg>
             </div>
-            """, unsafe_allow_html=True)
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-lg tracking-wider text-white font-mono">AIC<span class="text-indigo-400">.ENGINE</span></span>
+              <span class="text-[10px] font-mono font-semibold uppercase px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">v2.4 PRO</span>
+            </div>
+            <p class="text-xs text-slate-400 font-mono hidden sm:block">AI Challenge Video Retrieval Hub</p>
+          </div>
+        </div>
 
-            selected_name = st.selectbox("👤 Thành viên:", TEAM_MEMBERS)
+        <div class="h-6 w-[1px] bg-slate-800 hidden md:block"></div>
 
-            if st.button("🚀 Bắt Đầu Phiên Làm Việc", type="primary", use_container_width=True):
-                st.session_state.current_member = selected_name
-                st.rerun()
-    st.stop()
+        <!-- Live Server Status Indicator -->
+        <div class="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 font-mono">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span>API: Connected (18ms)</span>
+        </div>
+      </div>
 
-current_member = st.session_state.current_member
+      <!-- Dataset Selector & Submission Quota -->
+      <div class="flex items-center gap-3">
+        <!-- Dataset Dropdown -->
+        <div class="relative">
+          <label for="dataset-select" class="sr-only">Select Dataset</label>
+          <select id="dataset-select" class="cursor-pointer appearance-none bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono transition-all">
+            <option value="lse_2026">Dataset: LSE_2026_Batch_01 (120k Frames)</option>
+            <option value="ktsc_v2">Dataset: KTSC_Video_V2 (85k Frames)</option>
+            <option value="kis_2025">Dataset: KIS_Challenge_2025 (200k Frames)</option>
+          </select>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+        </div>
 
-# ==========================================
-# SIDEBAR CONTROL PANEL
-# ==========================================
-with st.sidebar:
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; gap: 12px; padding: 6px 0 16px 0;">
-        {logo_svg(38)}
+        <!-- Submissions Counter -->
+        <div class="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <span>Submit Limit: <strong>18/200</strong></span>
+        </div>
+
+        <!-- Quick Help Button -->
+        <button class="cursor-pointer p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500" title="Shortcuts & Documentation">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE LAYOUT -->
+  <main class="flex-1 max-w-[1760px] w-full mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- LEFT & CENTER COLUMN: SEARCH ENGINE & RESULTS (9 COLUMNS) -->
+    <div class="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
+      
+      <!-- AI MULTI-MODAL QUERY CENTER CARD -->
+      <section class="bg-slate-800/60 backdrop-blur-md rounded-2xl border border-slate-700/60 p-5 shadow-xl transition-all">
+        
+        <!-- Search Mode Switcher Tabs -->
+        <div class="flex items-center gap-2 mb-4 overflow-x-auto pb-1 border-b border-slate-700/50">
+          <button class="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-md shadow-indigo-600/30 transition-all">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <span>Text Prompt Search</span>
+          </button>
+          
+          <button class="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            <span>Image-to-Image (CLIP)</span>
+          </button>
+
+          <button class="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>
+            <span>ASR / Audio Transcript</span>
+          </button>
+
+          <button class="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3"></path><path d="M20 7V4h-3"></path><path d="M4 17v3h3"></path><path d="M20 17v3h-3"></path><rect x="9" y="9" width="6" height="6"></rect></svg>
+            <span>OCR / Text in Video</span>
+          </button>
+        </div>
+
+        <!-- Main Query Input Field -->
+        <div class="relative mb-4">
+          <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+            <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </div>
+          <input 
+            type="text" 
+            placeholder="Mô tả chi tiết bằng tiếng Việt hoặc tiếng Anh... (VD: Người mặc áo phao màu xanh lá đi xe đạp qua ngã tư lúc trời mưa)" 
+            class="w-full bg-slate-900/90 border border-slate-700 focus:border-indigo-500 rounded-xl pl-12 pr-32 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 font-sans transition-all shadow-inner"
+            value="Người phụ nữ áo dài đỏ đi bộ ngang qua cửa hàng bánh mì Saigon"
+          />
+          <div class="absolute inset-y-1.5 right-1.5 flex items-center gap-2">
+            <button class="cursor-pointer px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all active:scale-95">
+              <span>Execute Search</span>
+              <span class="bg-indigo-700 text-[10px] px-1.5 py-0.5 rounded font-mono">↵ Enter</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tag Quick Injectors & Active Filters -->
+        <div class="flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-slate-400 font-mono text-[11px]">Quick Tags:</span>
+            <button class="cursor-pointer px-2.5 py-1 rounded-md bg-slate-700/50 hover:bg-slate-700 text-indigo-300 border border-slate-600/50 font-mono text-[11px] transition-all">#ao_dai_do</button>
+            <button class="cursor-pointer px-2.5 py-1 rounded-md bg-slate-700/50 hover:bg-slate-700 text-indigo-300 border border-slate-600/50 font-mono text-[11px] transition-all">#banh_mi</button>
+            <button class="cursor-pointer px-2.5 py-1 rounded-md bg-slate-700/50 hover:bg-slate-700 text-indigo-300 border border-slate-600/50 font-mono text-[11px] transition-all">#pedestrian</button>
+            <button class="cursor-pointer px-2.5 py-1 rounded-md bg-slate-700/50 hover:bg-slate-700 text-indigo-300 border border-slate-600/50 font-mono text-[11px] transition-all">#street_cam</button>
+          </div>
+
+          <!-- Advanced Filters Toggle -->
+          <button class="cursor-pointer flex items-center gap-1.5 text-sky-400 hover:text-sky-300 font-medium transition-all">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            <span>Advanced Filters (FPS, Confidence)</span>
+          </button>
+        </div>
+
+      </section>
+
+      <!-- RESULTS HEADER BAR -->
+      <div class="flex items-center justify-between gap-4 flex-wrap px-1">
+        <div class="flex items-center gap-3">
+          <h2 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <span>Query Results</span>
+            <span class="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 text-xs font-mono font-normal">Found: 1,420 keyframes</span>
+          </h2>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <label for="grid-sort" class="sr-only">Sort Results</label>
+          <span class="text-xs text-slate-400 font-mono hidden sm:inline">Sort by:</span>
+          <select id="grid-sort" class="cursor-pointer bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+            <option value="relevance">Similarity Score (High → Low)</option>
+            <option value="time_asc">Chronological (Ascending)</option>
+            <option value="time_desc">Chronological (Descending)</option>
+          </select>
+
+          <div class="h-4 w-[1px] bg-slate-800"></div>
+
+          <!-- Display Layout Grid Switcher -->
+          <div class="flex items-center bg-slate-800 p-1 rounded-lg border border-slate-700">
+            <button class="cursor-pointer p-1.5 rounded bg-indigo-600 text-white transition-all" title="Dense Grid">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            </button>
+            <button class="cursor-pointer p-1.5 rounded text-slate-400 hover:text-white transition-all" title="List View">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KEYFRAME RESULTS GRID -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        
+        <!-- CARD 1 -->
+        <div class="group relative bg-slate-800/80 hover:bg-slate-800 rounded-xl border border-slate-700/80 hover:border-indigo-500/80 overflow-hidden shadow-lg transition-all duration-200 hover:-translate-y-1">
+          <!-- Thumbnail Container -->
+          <div class="relative aspect-video bg-slate-950 overflow-hidden cursor-pointer">
+            <!-- Frame Placeholder Image simulation -->
+            <div class="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 flex items-center justify-center relative">
+              <svg class="w-12 h-12 text-slate-700 group-hover:text-indigo-400/50 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+              <!-- Bounding Box Visual Overlay -->
+              <div class="absolute inset-[25%_35%_20%_30%] border-2 border-emerald-400 bg-emerald-500/10 rounded flex items-start p-1">
+                <span class="bg-emerald-500 text-slate-950 text-[9px] font-bold px-1 rounded font-mono">AoDai 98%</span>
+              </div>
+            </div>
+
+            <!-- Score Badge Top Right -->
+            <div class="absolute top-2 right-2 px-2 py-0.5 rounded bg-emerald-500/90 text-slate-950 text-[11px] font-bold font-mono shadow">
+              98.4% MATCH
+            </div>
+
+            <!-- Video Timestamp Bottom Left -->
+            <div class="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 backdrop-blur-sm text-slate-200 text-[10px] font-mono border border-slate-700/50">
+              01:24:15.200 (Frame #12,450)
+            </div>
+          </div>
+
+          <!-- Card Content / Metadata -->
+          <div class="p-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-semibold text-indigo-300 truncate" title="L01_V003_CAM_SAIGON">L01_V003_CAM_SAIGON</span>
+              <span class="text-[10px] text-slate-400 font-mono">FPS: 30.0</span>
+            </div>
+
+            <!-- Action Buttons Row -->
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/50">
+              <button class="cursor-pointer flex-1 py-1.5 px-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-medium flex items-center justify-center gap-1 transition-all">
+                <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Play Clip</span>
+              </button>
+              
+              <button class="cursor-pointer flex-1 py-1.5 px-2 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded text-xs font-medium flex items-center justify-center gap-1 transition-all">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span>Add to Stack</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 2 -->
+        <div class="group relative bg-slate-800/80 hover:bg-slate-800 rounded-xl border border-slate-700/80 hover:border-indigo-500/80 overflow-hidden shadow-lg transition-all duration-200 hover:-translate-y-1">
+          <div class="relative aspect-video bg-slate-950 overflow-hidden cursor-pointer">
+            <div class="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 flex items-center justify-center relative">
+              <svg class="w-12 h-12 text-slate-700 group-hover:text-indigo-400/50 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+              <div class="absolute inset-[30%_20%_25%_45%] border-2 border-emerald-400 bg-emerald-500/10 rounded flex items-start p-1">
+                <span class="bg-emerald-500 text-slate-950 text-[9px] font-bold px-1 rounded font-mono">Person 94%</span>
+              </div>
+            </div>
+            <div class="absolute top-2 right-2 px-2 py-0.5 rounded bg-emerald-500/90 text-slate-950 text-[11px] font-bold font-mono shadow">
+              94.1% MATCH
+            </div>
+            <div class="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 backdrop-blur-sm text-slate-200 text-[10px] font-mono border border-slate-700/50">
+              00:08:42.000 (Frame #07,820)
+            </div>
+          </div>
+          <div class="p-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-semibold text-indigo-300 truncate" title="L01_V008_STREET_02">L01_V008_STREET_02</span>
+              <span class="text-[10px] text-slate-400 font-mono">FPS: 25.0</span>
+            </div>
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/50">
+              <button class="cursor-pointer flex-1 py-1.5 px-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-medium flex items-center justify-center gap-1 transition-all">
+                <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Play Clip</span>
+              </button>
+              <button class="cursor-pointer flex-1 py-1.5 px-2 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded text-xs font-medium flex items-center justify-center gap-1 transition-all">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span>Add to Stack</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 3 (ACTIVE SELECTED STATE DEMO) -->
+        <div class="group relative bg-slate-800 rounded-xl border-2 border-emerald-500 overflow-hidden shadow-lg shadow-emerald-500/10 transition-all duration-200">
+          <div class="relative aspect-video bg-slate-950 overflow-hidden cursor-pointer">
+            <div class="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950/50 to-slate-900 flex items-center justify-center relative">
+              <svg class="w-12 h-12 text-slate-700 group-hover:text-indigo-400/50 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+            </div>
+            <!-- Added Stack Badge Overlay -->
+            <div class="absolute top-2 left-2 px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[10px] font-bold font-mono flex items-center gap-1">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>IN STACK (#1)</span>
+            </div>
+            <div class="absolute top-2 right-2 px-2 py-0.5 rounded bg-emerald-500/90 text-slate-950 text-[11px] font-bold font-mono shadow">
+                91.8% MATCH
+            </div>
+            <div class="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 backdrop-blur-sm text-slate-200 text-[10px] font-mono border border-slate-700/50">
+              00:15:02.100 (Frame #18,012)
+            </div>
+          </div>
+          <div class="p-3">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-semibold text-indigo-300 truncate" title="L02_V014_MARKET">L02_V014_MARKET</span>
+              <span class="text-[10px] text-slate-400 font-mono">FPS: 30.0</span>
+            </div>
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/50">
+              <button class="cursor-pointer flex-1 py-1.5 px-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-medium flex items-center justify-center gap-1 transition-all">
+                <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Play Clip</span>
+              </button>
+              <button class="cursor-pointer flex-1 py-1.5 px-2 bg-emerald-600 text-white rounded text-xs font-medium flex items-center justify-center gap-1 transition-all shadow-md shadow-emerald-600/30">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Added</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PAGINATION BAR -->
+      <div class="flex items-center justify-between gap-4 mt-2 px-1 text-xs font-mono">
+        <span class="text-slate-400">Showing 1 - 12 of 1,420 results</span>
+        <div class="flex items-center gap-1">
+          <button class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all disabled:opacity-50">Prev</button>
+          <button class="cursor-pointer px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold transition-all">1</button>
+          <button class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all">2</button>
+          <button class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all">3</button>
+          <span class="px-2 text-slate-500">...</span>
+          <button class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all">119</button>
+          <button class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all">Next</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: SUBMISSION DOCK & CONTROL PANEL (3 COLUMNS) -->
+    <div class="lg:col-span-4 xl:col-span-3 flex flex-col gap-6">
+      
+      <!-- EVALUATION SUBMISSION CARD -->
+      <section class="bg-slate-800/80 backdrop-blur-md rounded-2xl border border-indigo-500/30 p-5 shadow-2xl flex flex-col gap-4 relative overflow-hidden">
+        <!-- Glowing Top Border Line -->
+        <div class="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400"></div>
+
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            <h2 class="font-bold text-sm text-white tracking-wide uppercase font-mono">Submission Stack</h2>
+          </div>
+          <span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-mono">1 Item Selected</span>
+        </div>
+
+        <!-- Target Question Input Field -->
         <div>
-            <div style="font-family: var(--font-heading); font-weight: 700; font-size: 16px; line-height: 1.1;">
-                AIC WORKSTATION
-            </div>
-            <div style="color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); margin-top: 2px;">
-                v2.0 · Pro Max Edition
-            </div>
+          <label for="question-id" class="block text-xs text-slate-300 font-mono mb-1.5">Target Question ID (QA-ID):</label>
+          <input 
+            type="text" 
+            id="question-id"
+            placeholder="VD: QA_301_BATCH1" 
+            class="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-lg px-3 py-2 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            value="QA_KIS_2026_042"
+          />
         </div>
+
+        <!-- Selected Frame Preview List -->
+        <div class="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+          <!-- Stack Item 1 -->
+          <div class="flex items-center justify-between p-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-xs font-mono">
+            <div class="flex items-center gap-2 overflow-hidden">
+              <div class="w-10 h-7 bg-indigo-950 rounded overflow-hidden shrink-0 border border-slate-700"></div>
+              <div class="truncate">
+                <p class="text-slate-200 font-semibold truncate">L02_V014_MARKET</p>
+                <p class="text-[10px] text-slate-400">Frame: #18,012 | 00:15:02</p>
+              </div>
+            </div>
+            <button class="cursor-pointer text-slate-500 hover:text-rose-400 p-1 transition-colors" title="Remove from stack">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Submit CTA Button -->
+        <button class="cursor-pointer w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs uppercase tracking-wider font-mono shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all active:scale-98">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          <span>Submit Result to Evaluation Server</span>
+        </button>
+
+        <p class="text-[10px] text-slate-400 font-mono text-center">Auto-formatted format: <code>L02_V014,18012</code></p>
+      </section>
+
+      <!-- SYSTEM API LOG & RESPONSE CONSOLE -->
+      <section class="bg-slate-800/60 rounded-2xl border border-slate-700/60 p-4 font-mono text-xs flex flex-col gap-3">
+        <div class="flex items-center justify-between border-b border-slate-700/50 pb-2">
+          <span class="text-slate-300 font-semibold flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+            <span>Live System Console</span>
+          </span>
+          <span class="text-[10px] text-emerald-400">STATUS 200 OK</span>
+        </div>
+
+        <div class="bg-slate-950 rounded-lg p-3 text-[11px] leading-relaxed text-slate-300 font-mono overflow-x-auto border border-slate-800 space-y-1">
+          <p class="text-slate-500">[11:24:05] Model loaded: CLIP-ViT-L/14@336px</p>
+          <p class="text-indigo-400">[11:24:08] Vector Search executed in 14.2ms</p>
+          <p class="text-slate-300">&gt; Query Embeddings: shape=(1, 768)</p>
+          <p class="text-emerald-400">&gt; Top-1 match found in L01_V003_CAM_SAIGON (Score: 0.9842)</p>
+        </div>
+      </section>
+
     </div>
-    """, unsafe_allow_html=True)
 
-    with st.container(border=True):
-        st.markdown(f"""
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div>
-                <div style="font-size: 11px; color: var(--text-muted);">ĐANG TRỰC BAN</div>
-                <div style="font-weight: 700; font-size: 15px; color: var(--primary-cyan);">
-                    👤 {current_member}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("🔄 Đổi người", use_container_width=True):
-            st.session_state.current_member = None
-            st.rerun()
+  </main>
 
-    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+  <!-- FOOTER -->
+  <footer class="mt-auto border-t border-slate-800 py-4 px-6 text-center text-xs text-slate-500 font-mono">
+    <span>AIC 2026 Challenge Platform &bull; Built with Tailwind CSS & Design System Architecture</span>
+  </footer>
 
-    # Progression Tracker
-    total_queries = len(db)
-    completed_queries = sum(1 for item in db.values() if item.get("status") == "🟢 Hoàn thành")
-    prog = completed_queries / total_queries if total_queries > 0 else 0
-
-    with st.container(border=True):
-        st.markdown("**📊 Tiến Độ Gói Truy Vấn**")
-        st.progress(prog)
-        col_st1, col_st2 = st.columns(2)
-        col_st1.metric("Đã xong", f"{completed_queries}/{total_queries}")
-        col_st2.metric("Tỉ lệ", f"{int(prog * 100)}%")
-
-    st.markdown("<div class='header-eyebrow' style='margin: 16px 0 6px 0;'>📍 ĐIỀU HƯỚNG TÁC CHIẾN</div>", unsafe_allow_html=True)
-
-    NAV_ITEMS = [
-        "📋 Quản Lý Query",
-        "📤 Upload Nộp Bài",
-        "🛠️ Tool Spam Nhanh",
-        "📦 Tổng Hợp & Xuất File",
-    ]
-    if "selected_menu" not in st.session_state:
-        st.session_state.selected_menu = NAV_ITEMS[0]
-
-    for item in NAV_ITEMS:
-        is_active = st.session_state.selected_menu == item
-        if st.button(item, key=f"nav_{item}", use_container_width=True, type="primary" if is_active else "secondary"):
-            st.session_state.selected_menu = item
-            st.rerun()
-
-    selected_menu = st.session_state.selected_menu
-
-    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-    with st.expander("⚙️ Cài đặt hệ thống"):
-        confirm_clear = st.checkbox("Xác nhận xóa sạch DB", key="chk_del")
-        if st.button("🧹 Reset Dữ Liệu Ngày Mới", disabled=not confirm_clear, use_container_width=True):
-            st.session_state.db = {}
-            save_db({})
-            st.rerun()
-
-# ==========================================
-# MAIN WORKSPACE STAGE
-# ==========================================
-
-# --- PAGE 1: QUẢN LÝ QUERY ---
-if selected_menu == "📋 Quản Lý Query":
-    page_header("📋", "Quản Lý & Khởi Tạo Query", "Tạo nhiệm vụ truy vấn mới và phân công tiến độ cho các thành viên.")
-
-    col_form, col_list = st.columns([1.2, 1.8], gap="large")
-
-    with col_form:
-        with st.container(border=True):
-            st.subheader("➕ Thêm Query Mới")
-            q_name = st.text_input("Tên Query:", placeholder="VD: query-p2-14-kis")
-            q_type = st.radio("Loại bài:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
-
-            expected_suffix = SUFFIX_MAP[q_type]
-            if q_name and not q_name.lower().endswith(f"-{expected_suffix}"):
-                st.warning(f"⚠️ Khuyên dùng đuôi \"-{expected_suffix}\" cho loại bài {q_type} (VD: {q_name}-{expected_suffix}).")
-
-            q_num_events = None
-            if q_type == "TRAKE":
-                q_num_events = st.number_input("Số lượng events (N) trong chuỗi:", min_value=2, max_value=20, value=4)
-
-            q_desc = st.text_area("Miêu tả nội dung video / gợi ý:", placeholder="VD: VĐV mặc áo xanh đua xe qua khúc cua...")
-            q_raw_data = st.text_area("Dữ liệu truy vấn thô (Top-K Result):", height=120)
-
-            if st.button("🚀 Khởi Tạo Query", type="primary", use_container_width=True):
-                if q_name:
-                    db[q_name] = {
-                        "type": q_type,
-                        "description": q_desc,
-                        "raw_data": q_raw_data,
-                        "status": "🔴 Chưa làm",
-                        "assigned_to": current_member,
-                        "csv_content": "",
-                        "num_events": int(q_num_events) if q_num_events else None,
-                    }
-                    save_db(db)
-                    st.toast(f"Đã khởi tạo query {q_name} thành công!", icon="✅")
-                    st.rerun()
-                else:
-                    st.error("Vui lòng điền Tên Query!")
-
-    with col_list:
-        st.subheader("📑 Danh Sách Nhiệm Vụ Đang Mở")
-        if not db:
-            st.info("Chưa có query nào được tạo. Hãy khởi tạo ở bảng bên trái!")
-        else:
-            for q_id, info in list(db.items()):
-                with st.container(border=True):
-                    c1, c2 = st.columns([0.82, 0.18])
-                    type_label = info['type']
-                    if info['type'] == "TRAKE" and info.get("num_events"):
-                        type_label = f"TRAKE · N={info['num_events']}"
-
-                    c1.markdown(
-                        f"{status_badge(info['status'])} &nbsp; <span style='font-family: var(--font-mono); font-weight:700; font-size:15px;'>`{q_id}`</span> <span class='tag-type'>{type_label}</span>",
-                        unsafe_allow_html=True
-                    )
-                    c1.caption(f"📖 {info['description']}  |  *(Tạo bởi: {info.get('assigned_to', 'Ẩn danh')})*")
-
-                    with c2:
-                        if st.button("🗑️", key=f"d_{q_id}", help="Xóa query"):
-                            del db[q_id]
-                            save_db(db)
-                            st.rerun()
-                        if info['status'] == "🟢 Hoàn thành" and st.button("🔄", key=f"r_{q_id}", help="Đặt lại thành chưa xong"):
-                            db[q_id]["status"] = "🔴 Chưa làm"
-                            save_db(db)
-                            st.rerun()
-
-# --- PAGE 2: UPLOAD NỘP BÀI ---
-elif selected_menu == "📤 Upload Nộp Bài":
-    page_header("📤", "Upload & Validation CSV", "Kiểm tra cú pháp file CSV nộp bài trước khi đưa vào hàng chờ đóng gói.")
-
-    if not db:
-        st.info("Chưa có query nào trong hệ thống. Hãy tạo query ở mục Quản Lý Query trước.")
-    else:
-        col_up1, col_up2 = st.columns([1.2, 1])
-
-        with col_up1:
-            with st.container(border=True):
-                target_q = st.selectbox("🎯 Chọn Query cần cập nhật:", list(db.keys()))
-                up_file = st.file_uploader("Kéo thả file .CSV nộp bài vào đây:", type=['csv'])
-
-                if up_file and target_q:
-                    file_str = up_file.getvalue().decode("utf-8").strip()
-                    is_valid, errs = validate_csv_content(file_str, db[target_q]["type"], db[target_q].get("num_events"))
-
-                    if is_valid:
-                        st.success("✅ File CSV hợp lệ chuẩn 100 dòng theo yêu cầu BTC!")
-                        if st.button("💾 Cập Nhật Tiến Độ Hoàn Thành", type="primary", use_container_width=True):
-                            db[target_q].update({
-                                "csv_content": file_str,
-                                "status": "🟢 Hoàn thành",
-                                "completed_by": current_member
-                            })
-                            save_db(db)
-                            st.balloons()
-                            st.rerun()
-                    else:
-                        st.markdown("**Các lỗi phát hiện:**")
-                        for e in errs:
-                            st.error(e)
-
-        with col_up2:
-            if target_q:
-                q_info = db[target_q]
-                with st.container(border=True):
-                    st.markdown(f"**Yêu cầu cho `{target_q}`:**")
-                    st.markdown(f"- **Loại bài:** `{q_info['type']}`")
-                    if q_info.get("num_events"):
-                        st.markdown(f"- **Số lượng Events:** `{q_info['num_events']}`")
-                    st.markdown(f"- **Mô tả:** {q_info['description']}")
-
-# --- PAGE 3: TOOL SPAM NHANH ---
-elif selected_menu == "🛠️ Tool Spam Nhanh":
-    page_header("🛠️", "Tool Spam Keyframe Tự Do", "Sinh file CSV test 100 dòng tự động từ các mốc frame hoặc khoảng thời gian.")
-
-    tab_point, tab_range, tab_trake = st.tabs([
-        "🎯 Spam Tỏa Tròn (Point Expand)",
-        "⏱️ Spam Khoảng Thời Gian (Time Range)",
-        "🔗 Spam Chuỗi Sự Kiện (TRAKE)"
-    ])
-
-    # Tab 1: Point Expand
-    with tab_point:
-        col_inp, col_cfg = st.columns([1.1, 0.9])
-        with col_inp:
-            with st.container(border=True):
-                s1_vid = clean_video_id(st.text_input("Video ID (VD: L21_V013):", key="s1_vid"))
-                s1_frames = st.text_area("Các Frame ID mốc gốc (cách nhau bằng dấu phẩy):", key="s1_frames", placeholder="120, 450, 980")
-                s1_type = st.radio("Loại bài:", ["Textual KIS", "Q&A"], horizontal=True, key="s1_type")
-                s1_qa = ""
-                if s1_type == "Q&A":
-                    s1_qa = st.text_input("Câu trả lời Q&A (Answer):", key="s1_qa")
-                    qa_len = len(s1_qa)
-                    qa_color = "var(--danger)" if qa_len > MAX_ANSWER_LEN else ("var(--warning)" if qa_len > 85 else "var(--text-muted)")
-                    st.markdown(
-                        f"<div style='font-family:var(--font-mono); font-size:12px; color:{qa_color}; margin-top:-6px; text-align:right;'>Độ dài: {qa_len}/{MAX_ANSWER_LEN} ký tự</div>",
-                        unsafe_allow_html=True
-                    )
-
-        with col_cfg:
-            with st.container(border=True):
-                s1_total = st.number_input("Tổng số dòng mong muốn:", min_value=1, max_value=500, value=100)
-                s1_step = st.number_input("Bước nhảy tỏa tròn (Step Frame):", min_value=1, max_value=50, value=5)
-
-                st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-                if st.button("🚀 Sinh CSV (Tỏa Tròn)", type="primary", use_container_width=True):
-                    parsed_f = [int(x) for x in re.findall(r'\d+', s1_frames)]
-                    if not s1_vid or not parsed_f:
-                        st.error("Vui lòng điền đủ Video ID và ít nhất 1 Frame mốc.")
-                    else:
-                        csv_out = generate_spam_csv(s1_vid, parsed_f, s1_type == "Q&A", s1_qa, s1_total, s1_step)
-                        st.success(f"Đã khởi tạo thành công {s1_total} dòng!")
-                        st.download_button("📥 Tải Tệp CSV Về Máy", data=csv_out, file_name=f"spam_point_{s1_vid}.csv", mime="text/csv", use_container_width=True)
-
-    # Tab 2: Time Range
-    with tab_range:
-        col_inp2, col_cfg2 = st.columns([1.1, 0.9])
-        with col_inp2:
-            with st.container(border=True):
-                s2_vid = clean_video_id(st.text_input("Video ID (VD: L21_V013):", key="s2_vid"))
-                col_t1, col_t2 = st.columns(2)
-                s2_start = col_t1.text_input("Thời gian đầu (HH:MM:SS):", placeholder="00:05:00")
-                s2_end = col_t2.text_input("Thời gian cuối (HH:MM:SS):", placeholder="00:05:15")
-
-                s2_type = st.radio("Loại bài:", ["Textual KIS", "Q&A"], horizontal=True, key="s2_type")
-                s2_qa = ""
-                if s2_type == "Q&A":
-                    s2_qa = st.text_input("Câu trả lời Q&A (Answer):", key="s2_qa")
-                    qa_len2 = len(s2_qa)
-                    qa_color2 = "var(--danger)" if qa_len2 > MAX_ANSWER_LEN else ("var(--warning)" if qa_len2 > 85 else "var(--text-muted)")
-                    st.markdown(
-                        f"<div style='font-family:var(--font-mono); font-size:12px; color:{qa_color2}; margin-top:-6px; text-align:right;'>Độ dài: {qa_len2}/{MAX_ANSWER_LEN} ký tự</div>",
-                        unsafe_allow_html=True
-                    )
-
-        with col_cfg2:
-            with st.container(border=True):
-                s2_fps = st.number_input("Tốc độ khung hình (FPS - Mặc định 25):", min_value=1, max_value=60, value=25)
-                s2_total = st.number_input("Tổng số dòng (Phân bổ đều):", min_value=1, max_value=500, value=100)
-
-                st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-                if st.button("🚀 Sinh CSV (Rải Thảm Khoảng Thời Gian)", type="primary", use_container_width=True):
-                    sec_start, sec_end = time_to_sec(s2_start), time_to_sec(s2_end)
-                    if not s2_vid:
-                        st.error("Thiếu Video ID!")
-                    elif sec_start < 0 or sec_end < 0:
-                        st.error("Thời gian nhập sai định dạng HH:MM:SS.")
-                    elif sec_start >= sec_end:
-                        st.error("Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc!")
-                    else:
-                        frame_start, frame_end = sec_start * s2_fps, sec_end * s2_fps
-                        csv_out2 = generate_range_csv(s2_vid, frame_start, frame_end, s2_type == "Q&A", s2_qa, s2_total)
-                        st.success(f"Đã tạo thành công {s2_total} dòng!")
-                        st.download_button("📥 Tải Tệp CSV Về Máy", data=csv_out2, file_name=f"spam_range_{s2_vid}.csv", mime="text/csv", use_container_width=True)
-
-    # Tab 3: TRAKE Sequence
-    with tab_trake:
-        col_inp3, col_cfg3 = st.columns([1.1, 0.9])
-        with col_inp3:
-            with st.container(border=True):
-                s3_vid = clean_video_id(st.text_input("Video ID (VD: L10_V001):", key="s3_vid"))
-                s3_frames = st.text_area(
-                    "Chuỗi Frame ID các event (theo thứ tự thời gian, cách nhau dấu phẩy):",
-                    key="s3_frames",
-                    placeholder="1200, 1850, 2100, 2450"
-                )
-                st.caption("💡 Thuật toán sẽ tịnh tiến cả chuỗi event đồng thời để giữ nguyên khoảng cách tương đối.")
-
-        with col_cfg3:
-            with st.container(border=True):
-                s3_total = st.number_input("Tổng số dòng biến thể:", min_value=1, max_value=500, value=100, key="s3_total")
-                s3_step = st.number_input("Bước dịch chuỗi (Step Frame):", min_value=1, max_value=50, value=5, key="s3_step")
-
-                st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-                if st.button("🚀 Sinh CSV Chuỗi TRAKE", type="primary", use_container_width=True, key="s3_btn"):
-                    parsed_events = [int(x) for x in re.findall(r'\d+', s3_frames)]
-                    if not s3_vid or len(parsed_events) < 2:
-                        st.error("Cần nhập Video ID và ít nhất 2 Frame ID sự kiện.")
-                    else:
-                        csv_out3 = generate_trake_csv(s3_vid, parsed_events, s3_total, s3_step)
-                        st.success(f"Đã tạo thành công {s3_total} dòng chuỗi sự kiện!")
-                        st.download_button("📥 Tải Tệp CSV Về Máy", data=csv_out3, file_name=f"spam_trake_{s3_vid}.csv", mime="text/csv", use_container_width=True)
-
-# --- PAGE 4: TỔNG HỢP & XUẤT FILE ---
-elif selected_menu == "📦 Tổng Hợp & Xuất File":
-    page_header("📦", "Đóng Gói & Theo Dõi Nộp Bài", "Xem xét trạng thái tất cả các bài giải, nén file ZIP submission và ghi log nộp bài.")
-
-    completed_queries = {k: v for k, v in db.items() if v["status"] == "🟢 Hoàn thành"}
-    missing_queries = {k: v for k, v in db.items() if v["status"] == "🔴 Chưa làm"}
-
-    tab_kiemtra, tab_donggoi, tab_theodoi = st.tabs([
-        "👁️ Soát Lỗi File CSV",
-        "🗜️ Đóng Gói File ZIP",
-        "🧾 Theo Dõi Số Lần Nộp"
-    ])
-
-    with tab_kiemtra:
-        col_xanh, col_do = st.columns([1.1, 0.9])
-
-        with col_xanh:
-            st.subheader(f"✅ Đã Hoàn Thành ({len(completed_queries)} file)")
-            with st.container(border=True):
-                if not completed_queries:
-                    st.info("Chưa có query nào hoàn thành.")
-                else:
-                    target_view = st.selectbox("Xem chi tiết nội dung CSV:", list(completed_queries.keys()))
-                    if target_view:
-                        st.caption(f"Hoàn thành bởi: **{completed_queries[target_view].get('completed_by', 'Ẩn danh')}**")
-                        st.code(completed_queries[target_view]["csv_content"], language="csv")
-
-        with col_do:
-            st.subheader(f"⚠️ Chưa Hoàn Thành ({len(missing_queries)} file)")
-            with st.container(border=True):
-                if not missing_queries:
-                    st.success("Tất cả các query đã được hoàn thành!")
-                    st.balloons()
-                else:
-                    for k in missing_queries.keys():
-                        st.markdown(f"🔴 <span style='font-family:var(--font-mono);'>`{k}`</span>", unsafe_allow_html=True)
-
-    with tab_donggoi:
-        st.subheader("🗜️ Đóng gói thư mục submission/")
-        st.caption("File ZIP tạo ra sẽ tự động bao gồm cấu trúc thư mục `submission/<query-id>.csv` chuẩn BTC.")
-
-        if not completed_queries:
-            st.warning("⚠️ Chưa có file nào hoàn thành để đóng gói.")
-        else:
-            col_zip1, col_zip2 = st.columns([1, 1])
-            with col_zip1:
-                with st.container(border=True):
-                    zip_filename = st.text_input("Tên file ZIP xuất ra:", value="submit_lan_1.zip")
-                    if not zip_filename.endswith(".zip"):
-                        zip_filename += ".zip"
-
-                    if st.button("📦 Nén ZIP Ngay", type="primary", use_container_width=True):
-                        zip_data = create_zip_file(db)
-                        st.success(f"Đã đóng gói thành công {len(completed_queries)} file!")
-                        st.download_button(
-                            label=f"📥 CLICK TẢI {zip_filename}",
-                            data=zip_data,
-                            file_name=zip_filename,
-                            mime="application/zip",
-                            use_container_width=True
-                        )
-
-            with col_zip2:
-                with st.container(border=True):
-                    st.markdown("**Cấu trúc danh sách trong ZIP:**")
-                    for k in completed_queries.keys():
-                        st.markdown(f"📄 `submission/{k}.csv`")
-
-    with tab_theodoi:
-        st.subheader("🧾 Nhật Ký Giới Hạn Nộp Bài (Max 3 lần)")
-        st.caption("Quy định BTC: Tối đa 3 lần nộp cho mỗi gói truy vấn. Đánh dấu ngay khi bấm nộp trên portal.")
-
-        log = st.session_state.submission_log
-        count = len(log)
-        bar_color = "var(--danger)" if count >= 3 else ("var(--warning)" if count == 2 else "var(--success)")
-
-        with st.container(border=True):
-            st.markdown(
-                f"<div style='font-family:var(--font-mono); font-size:46px; font-weight:700; color:{bar_color};'>{count} / 3</div>",
-                unsafe_allow_html=True
-            )
-
-            if count >= 3:
-                st.error("⚠️ Đã hết lượt nộp cho gói hiện tại! Kết quả tính điểm sẽ lấy theo lần nộp thứ 3.")
-            elif count == 2:
-                st.warning("⚠️ Chỉ còn 1 lượt nộp cuối cùng — hãy soát lại toàn bộ file trước khi gửi.")
-
-            col_sub1, col_sub2 = st.columns(2)
-            with col_sub1:
-                if st.button("➕ Đánh Dấu Đã Nộp Lần Này", type="primary", use_container_width=True, disabled=count >= 3):
-                    st.session_state.submission_log.append({
-                        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "member": current_member,
-                    })
-                    save_submission_log(st.session_state.submission_log)
-                    st.rerun()
-
-            with col_sub2:
-                confirm_reset_sub = st.checkbox("Xác nhận reset gói")
-                if st.button("🔄 Reset Nhật Ký (Cho Gói Mới)", use_container_width=True, disabled=not confirm_reset_sub):
-                    st.session_state.submission_log = []
-                    save_submission_log([])
-                    st.rerun()
-
-        if log:
-            st.markdown("**Lịch sử các lần đánh dấu:**")
-            for idx, entry in reversed(list(enumerate(log, start=1))):
-                st.markdown(f"- **Lần {idx}:** {entry['time']} — *Thực hiện bởi: {entry['member']}*")
+</body>
+</html>
