@@ -18,7 +18,7 @@ SUBMISSION_LOG_FILE = "submission_log.json"
 TEAM_MEMBERS = ["VThành", "LThiện", "PThiện", "Nguyên", "NThành"]
 SUFFIX_MAP = {"Textual KIS": "kis", "Q&A": "qa", "TRAKE": "trake"}
 MAX_ANSWER_LEN = 100
-DEFAULT_FOLDER_ID = "1de5La8Dr0R7coCblvwFGpU_1_OSueJF2" # Tự động lấy từ link của bạn
+DEFAULT_FOLDER_ID = "1de5La8Dr0R7coCblvwFGpU_1_OSueJF2"
 
 # ==========================================
 # THEME — HỆ THỐNG DESIGN SYSTEM (UI UX PRO MAX)
@@ -402,8 +402,8 @@ elif menu == "⚙️ Auto-Generator (Spam)":
     if not active_qs:
         st.success("Tất cả các Query đều đã hoàn thành hoặc chưa có Query nào!")
     else:
-        # TÍCH HỢP MÀN HÌNH CHIA ĐÔI: BÊN TRÁI LÀ SPAM, BÊN PHẢI LÀ MONITOR (DRIVE PLAYER)
-        col_tools, col_player = st.columns([1.5, 1.3], gap="large")
+        # TÍCH HỢP MÀN HÌNH CHIA ĐÔI: BÊN TRÁI LÀ SPAM, BÊN PHẢI LÀ MONITOR (DRIVE PLAYER) CÓ TÍNH NĂNG SEARCH
+        col_tools, col_player = st.columns([1.4, 1.4], gap="large")
         
         with col_tools:
             selected_q = st.selectbox("🎯 Chọn Query đang tác chiến:", list(active_qs.keys()))
@@ -469,31 +469,45 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
                             save_db(db); st.success("Thành công!"); st.balloons(); st.rerun()
 
-        # ==================== KHU VỰC LIVE MONITOR ====================
+        # ==================== KHU VỰC LIVE MONITOR CÓ SEARCH ====================
         with col_player:
-            st.markdown("<h4 style='color:var(--accent-cyan);'>📺 Live Monitor</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color:var(--accent-cyan);'>📺 Live Monitor & Search</h4>", unsafe_allow_html=True)
             with st.container(border=True):
+                # 1. Khung điền Link tổng
                 drive_link = st.text_input(
-                    "Nhập Link File hoặc Folder Drive:", 
+                    "📁 Link Folder Tổng (Hoặc link File riêng):", 
                     value=f"https://drive.google.com/drive/folders/{DEFAULT_FOLDER_ID}",
                     help="Hệ thống mặc định mở Folder Thư viện. Nếu muốn xem 1 video cụ thể, dán link file đó vào đây."
                 )
+                gid, gtype = extract_gdrive_id(drive_link) if drive_link else ("", "")
+
+                # 2. Khung Search thông minh (Bypass iframe restriction)
+                if gtype == "folder":
+                    search_vid = st.text_input("🔍 Tìm nhanh Video (Mở sang tab kết quả):", placeholder="VD: L26_V021")
+                    if search_vid:
+                        # Cú pháp search chính xác của Google Drive bên trong 1 folder cụ thể
+                        search_url = f"https://drive.google.com/drive/search?q=%22{search_vid}%22%20parent:{gid}"
+                        st.markdown(f"""
+                        <a href="{search_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo)); color: white; font-family: var(--font-mono); font-weight: bold; font-size: 14px; border-radius: 8px; text-decoration: none; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(6,182,212,0.3); transition: all 0.2s;">
+                            🚀 TÌM & MỞ [{search_vid}] TRÊN GOOGLE DRIVE
+                        </a>
+                        """, unsafe_allow_html=True)
                 
+                # 3. Iframe Player
                 if drive_link:
-                    gid, gtype = extract_gdrive_id(drive_link)
-                    
-                    # Render iFrame tùy vào việc nó là Folder hay File
+                    # Chỉnh chiều cao phù hợp với không gian còn lại
                     if gtype == "folder":
                         iframe_src = f"https://drive.google.com/embeddedfolderview?id={gid}#grid"
-                        height = 420
+                        height = 400 if not search_vid else 310
                     else:
                         iframe_src = f"https://drive.google.com/file/d/{gid}/preview"
-                        height = 280
+                        height = 300
                         
                     st.markdown(f"""
                     <div style="border: 1px solid var(--accent-cyan); border-radius: 8px; overflow: hidden; box-shadow: 0 0 15px rgba(6,182,212,0.15);">
-                        <div style="background: var(--bg-sidebar); padding: 4px 12px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan);">
-                            🔴 TACTICAL PREVIEW [TYPE: {gtype.upper()}]
+                        <div style="background: var(--bg-sidebar); padding: 4px 12px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan); display: flex; justify-content: space-between;">
+                            <span>🔴 TACTICAL PREVIEW</span>
+                            <span>[TYPE: {gtype.upper()}]</span>
                         </div>
                         <iframe src="{iframe_src}" width="100%" height="{height}" style="border:none;" allow="autoplay"></iframe>
                     </div>
@@ -584,6 +598,6 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
 # ==========================================
 st.markdown("""
 <div style='text-align:center; padding-top:40px; color:var(--text-muted); font-size:12px; font-family:var(--font-mono);'>
-    AIC Workspace 2026 • Tactical Edition + Live Video Monitor
+    AIC Workspace 2026 • Tactical Edition + Smart Search Bypass
 </div>
 """, unsafe_allow_html=True)
