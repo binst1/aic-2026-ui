@@ -117,7 +117,7 @@ def status_badge(status_str):
     return f'<div class="badge {css}"><div class="dot"></div>{status_str}</div>'
 
 # ==========================================
-# BACKEND LOGIC (FIXED FOR REAL-TIME SYNC)
+# BACKEND LOGIC (REAL-TIME SYNC)
 # ==========================================
 def clean_video_id(vid): return re.sub(r'\.\w{2,4}$', '', vid.strip()) if vid else vid
 def build_csv_row(fields):
@@ -125,7 +125,6 @@ def build_csv_row(fields):
     return buf.getvalue()
 
 def load_db():
-    # LUÔN ĐỌC LIVE TỪ FILE TRÊN Ổ CỨNG MỖI LẦN CLICK, KHÔNG LƯU CACHE SẼ HẾT LAG
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
@@ -135,7 +134,6 @@ def load_db():
 def save_db(current_db):
     with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(current_db, f, ensure_ascii=False, indent=2)
 
-# Lấy Database mới nhất mỗi khi load lại trang
 db = load_db()
 
 if "current_member" not in st.session_state: st.session_state.current_member = None
@@ -250,8 +248,7 @@ current_member = st.session_state.current_member
 # SIDEBAR
 # ==========================================
 with st.sidebar:
-    # NÚT ĐỒNG BỘ REAL-TIME CHỐNG LAG (Fix F5)
-    if st.button("🔄 ĐỒNG BỘ LIVE CHỐNG LAG", type="primary", use_container_width=True, help="Lấy tiến độ mới nhất của team mà không cần F5"):
+    if st.button("🔄 ĐỒNG BỘ LIVE CHỐNG LAG", type="primary", use_container_width=True):
         st.rerun()
     
     st.markdown("<br>", unsafe_allow_html=True)
@@ -307,28 +304,37 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
     page_header("Quản Lý & Phân Công Nhiệm Vụ", "Tạo các truy vấn từ đề thi, khóa mục tiêu để tránh đụng hàng đồng đội.")
     c1, c2 = st.columns([1.1, 1.5], gap="large")
     
+    # Kỹ thuật dùng Session State để xóa form mà không dùng st.form
+    if 'input_q_name' not in st.session_state: st.session_state.input_q_name = ""
+    if 'input_q_desc' not in st.session_state: st.session_state.input_q_desc = ""
+    if 'input_q_raw' not in st.session_state: st.session_state.input_q_raw = ""
+
     with c1:
         with st.container(border=True):
             st.markdown("#### ➕ Tạo Truy Vấn Mới")
-            with st.form("form_tao_query", clear_on_submit=True):
-                q_name = st.text_input("Tên Query (VD: query-p2-1-kis):")
-                q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
-                q_num = st.number_input("Số lượng sự kiện (Chỉ dùng cho TRAKE):", min_value=2, value=4)
-                q_desc = st.text_area("Miêu tả ngữ cảnh video:", height=80)
-                q_raw = st.text_area("Paste Top K Dữ Liệu Raw (Tùy chọn):", height=80)
-                
-                submitted = st.form_submit_button("Thêm Vào Hàng Đợi", type="primary", use_container_width=True)
-                if submitted:
-                    if not q_name: 
-                        st.error("Tên Query không được để trống!")
-                    elif q_name in db: 
-                        st.error(f"❌ Query '{q_name}' đã tồn tại! Đặt tên khác để không bị đè.")
-                    else:
-                        db[q_name] = {
-                            "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
-                            "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_type == "TRAKE" else None
-                        }
-                        save_db(db); st.rerun()
+            
+            q_name = st.text_input("Tên Query (VD: query-p2-1-kis):", value=st.session_state.input_q_name)
+            q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
+            q_num = st.number_input("Số lượng sự kiện (Chỉ dùng cho TRAKE):", min_value=2, value=4)
+            q_desc = st.text_area("Miêu tả ngữ cảnh video:", height=80, value=st.session_state.input_q_desc)
+            q_raw = st.text_area("Paste Top K Dữ Liệu Raw (Tùy chọn):", height=80, value=st.session_state.input_q_raw)
+            
+            if st.button("Thêm Vào Hàng Đợi", type="primary", use_container_width=True):
+                if not q_name: 
+                    st.error("Tên Query không được để trống!")
+                elif q_name in db: 
+                    st.error(f"❌ Query '{q_name}' đã tồn tại! Đặt tên khác để không bị đè.")
+                else:
+                    db[q_name] = {
+                        "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
+                        "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_type == "TRAKE" else None
+                    }
+                    save_db(db)
+                    # Xóa biến nhập liệu & Rerun
+                    st.session_state.input_q_name = ""
+                    st.session_state.input_q_desc = ""
+                    st.session_state.input_q_raw = ""
+                    st.rerun()
 
     with c2:
         st.markdown("#### 📑 Bảng Phân Công Tác Chiến")
@@ -397,11 +403,11 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                 with st.expander("🔍 Xem dữ liệu truy vấn thô (Raw Data / Top K)"):
                     st.code(info['raw_data'])
 
-            # NÚT DOWNLOAD THẦN THÁNH HIỆN NGAY DƯỚI ĐÂY SAU KHI TẠO XONG
+            # NÚT DOWNLOAD XUẤT HIỆN TẠI ĐÂY
             if info.get("csv_content") and info["status"] == "🟢 Hoàn thành":
-                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
                 st.download_button(
-                    label=f"📥 TẢI FILE CSV VỪA TẠO ({selected_q}.csv)",
+                    label=f"📥 TẢI XUỐNG FILE CSV ({selected_q}.csv)",
                     data=info["csv_content"],
                     file_name=f"{selected_q}.csv",
                     mime="text/csv",
@@ -410,9 +416,11 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                 )
 
         # ==========================================
-        # 2. KHU VỰC TOOL SPAM GENERATOR (FULL WIDTH)
+        # 2. KHU VỰC TOOL SPAM GENERATOR
         # ==========================================
-        st.markdown("<br>#### 🛠️ Công cụ tạo File (Generator)", unsafe_allow_html=True)
+        st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+        st.markdown("#### 🛠️ Công cụ tạo File (Generator)")
+        
         with st.container(border=True):
             t1, t2, t3 = st.tabs(["🎯 Tỏa Tròn (Point)", "⏱️ Khoảng (Range)", "🔗 Chuỗi (TRAKE)"])
             
@@ -550,6 +558,6 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
 # ==========================================
 st.markdown("""
 <div style='text-align:center; padding-top:40px; color:var(--text-muted); font-size:12px; font-family:var(--font-mono);'>
-    AIC Workspace 2026 • Real-time Sync & Rapid Export Edition
+    AIC Workspace 2026 • Optimized Tactical Edition (Final)
 </div>
 """, unsafe_allow_html=True)
