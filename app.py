@@ -117,7 +117,7 @@ def status_badge(status_str):
     return f'<div class="badge {css}"><div class="dot"></div>{status_str}</div>'
 
 # ==========================================
-# BACKEND LOGIC
+# BACKEND LOGIC (FIXED FOR REAL-TIME SYNC)
 # ==========================================
 def clean_video_id(vid): return re.sub(r'\.\w{2,4}$', '', vid.strip()) if vid else vid
 def build_csv_row(fields):
@@ -125,16 +125,19 @@ def build_csv_row(fields):
     return buf.getvalue()
 
 def load_db():
+    # LUÔN ĐỌC LIVE TỪ FILE TRÊN Ổ CỨNG MỖI LẦN CLICK, KHÔNG LƯU CACHE SẼ HẾT LAG
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
         except: pass
     return {}
-def save_db(db):
-    with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(db, f, ensure_ascii=False, indent=2)
 
-if "db" not in st.session_state: st.session_state.db = load_db()
-db = st.session_state.db
+def save_db(current_db):
+    with open(DB_FILE, "w", encoding="utf-8") as f: json.dump(current_db, f, ensure_ascii=False, indent=2)
+
+# Lấy Database mới nhất mỗi khi load lại trang
+db = load_db()
+
 if "current_member" not in st.session_state: st.session_state.current_member = None
 
 def load_submission_log():
@@ -143,10 +146,9 @@ def load_submission_log():
             with open(SUBMISSION_LOG_FILE, "r", encoding="utf-8") as f: return json.load(f)
         except: pass
     return []
+
 def save_submission_log(log):
     with open(SUBMISSION_LOG_FILE, "w", encoding="utf-8") as f: json.dump(log, f, ensure_ascii=False, indent=2)
-
-if "submission_log" not in st.session_state: st.session_state.submission_log = load_submission_log()
 
 def validate_csv_content(content_str, task_type, num_events=None):
     rows = [row for row in csv.reader(io.StringIO(content_str)) if row]
@@ -248,7 +250,12 @@ current_member = st.session_state.current_member
 # SIDEBAR
 # ==========================================
 with st.sidebar:
-    st.markdown(f"<h3 style='color:var(--accent-cyan);'>⚡ AIC Workspace</h3>", unsafe_allow_html=True)
+    # NÚT ĐỒNG BỘ REAL-TIME CHỐNG LAG (Fix F5)
+    if st.button("🔄 ĐỒNG BỘ LIVE CHỐNG LAG", type="primary", use_container_width=True, help="Lấy tiến độ mới nhất của team mà không cần F5"):
+        st.rerun()
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color:var(--accent-cyan); margin-top:0;'>⚡ AIC Workspace</h3>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-family:var(--font-mono); font-size:13px; margin-bottom: 20px;'>User: <span style='color:var(--accent-cyan);'>{current_member}</span></div>", unsafe_allow_html=True)
     
     total_q = len(db)
@@ -288,7 +295,7 @@ with st.sidebar:
     with st.expander("🛠️ Cài đặt hệ thống"):
         if st.button("🔄 Đổi tài khoản", use_container_width=True): st.session_state.current_member = None; st.rerun()
         if st.checkbox("Mở khóa Reset DB"):
-            if st.button("🧹 Xóa sạch Database", use_container_width=True): st.session_state.db = {}; save_db({}); st.rerun()
+            if st.button("🧹 Xóa sạch Database", use_container_width=True): save_db({}); st.rerun()
 
 menu = st.session_state.menu
 
@@ -298,25 +305,30 @@ menu = st.session_state.menu
 
 if menu == "📋 Quản Lý Nhiệm Vụ":
     page_header("Quản Lý & Phân Công Nhiệm Vụ", "Tạo các truy vấn từ đề thi, khóa mục tiêu để tránh đụng hàng đồng đội.")
-    c1, c2 = st.columns([1, 1.5], gap="large")
+    c1, c2 = st.columns([1.1, 1.5], gap="large")
     
     with c1:
         with st.container(border=True):
             st.markdown("#### ➕ Tạo Truy Vấn Mới")
-            q_name = st.text_input("Tên Query (VD: query-p2-1-kis):")
-            q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
-            q_num = st.number_input("Số lượng sự kiện (Chỉ dùng cho TRAKE):", min_value=2, value=4) if q_type == "TRAKE" else None
-            q_desc = st.text_area("Miêu tả ngữ cảnh video:", height=80)
-            q_raw = st.text_area("Paste Top K Dữ Liệu Raw (Tùy chọn):", height=80)
-            
-            if st.button("Thêm Vào Hàng Đợi", type="primary", use_container_width=True):
-                if not q_name: st.error("Tên Query không được để trống!")
-                else:
-                    db[q_name] = {
-                        "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
-                        "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_num else None
-                    }
-                    save_db(db); st.toast("Đã thêm thành công!", icon="✅"); st.rerun()
+            with st.form("form_tao_query", clear_on_submit=True):
+                q_name = st.text_input("Tên Query (VD: query-p2-1-kis):")
+                q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
+                q_num = st.number_input("Số lượng sự kiện (Chỉ dùng cho TRAKE):", min_value=2, value=4)
+                q_desc = st.text_area("Miêu tả ngữ cảnh video:", height=80)
+                q_raw = st.text_area("Paste Top K Dữ Liệu Raw (Tùy chọn):", height=80)
+                
+                submitted = st.form_submit_button("Thêm Vào Hàng Đợi", type="primary", use_container_width=True)
+                if submitted:
+                    if not q_name: 
+                        st.error("Tên Query không được để trống!")
+                    elif q_name in db: 
+                        st.error(f"❌ Query '{q_name}' đã tồn tại! Đặt tên khác để không bị đè.")
+                    else:
+                        db[q_name] = {
+                            "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
+                            "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_type == "TRAKE" else None
+                        }
+                        save_db(db); st.rerun()
 
     with c2:
         st.markdown("#### 📑 Bảng Phân Công Tác Chiến")
@@ -327,7 +339,7 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                 with col_a:
                     badge = status_badge(info['status'])
                     ty = f"TRAKE N={info['num_events']}" if info['type']=="TRAKE" else info['type']
-                    st.markdown(f"{badge} &nbsp; **`{q_id}`** <span style='font-family:var(--font-mono); font-size:12px; color:var(--text-muted);'>[{ty}]</span>", unsafe_allow_html=True)
+                    st.markdown(f"{badge} &nbsp; <code style='font-size:15px; font-weight:700; color:var(--accent-cyan); background:transparent; padding:0;'>{q_id}</code> <span style='font-family:var(--font-mono); font-size:12px; color:var(--text-muted);'>[{ty}]</span>", unsafe_allow_html=True)
                     assignee = info.get('assigned_to')
                     assign_txt = f"<span style='color:var(--warning); font-weight:700;'>{assignee} đang xử lý</span>" if info['status'] == "🟡 Đang làm" else f"Tạo bởi: {assignee}"
                     st.caption(f"{assign_txt} | {info['description'][:50]}...", unsafe_allow_html=True)
@@ -351,12 +363,11 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
 elif menu == "⚙️ Auto-Generator (Spam)":
     page_header("AI Generation Engine", "Màn hình tác chiến: Dò frame và tự động sinh file CSV nộp bài.")
     
-    active_qs = {k: v for k, v in db.items() if v["status"] in ["🔴 Chưa làm", "🔴 Cần làm lại", "🟡 Đang làm"]}
+    active_qs = {k: v for k, v in db.items() if v["status"] in ["🔴 Chưa làm", "🔴 Cần làm lại", "🟡 Đang làm", "🟢 Hoàn thành"]}
     
     if not active_qs:
-        st.success("Tất cả các Query đều đã hoàn thành hoặc chưa có Query nào trong hệ thống!")
+        st.info("Chưa có Query nào trong hệ thống!")
     else:
-        # Chọn Query
         selected_q = st.selectbox("🎯 Chọn Query đang tác chiến:", list(active_qs.keys()))
         info = db[selected_q]
         
@@ -369,29 +380,37 @@ elif menu == "⚙️ Auto-Generator (Spam)":
         st.markdown("#### 📋 Chi tiết mục tiêu")
         with st.container(border=True):
             c_head1, c_head2, c_head3 = st.columns(3)
-            with c_head1:
-                st.markdown(f"**Trạng thái:** {status_badge(info['status'])}", unsafe_allow_html=True)
+            with c_head1: st.markdown(f"**Trạng thái:** {status_badge(info['status'])}", unsafe_allow_html=True)
             with c_head2:
                 ty = f"TRAKE (N={info['num_events']})" if info['type']=="TRAKE" else info['type']
                 st.markdown(f"**Loại bài:** `<{ty}>`", unsafe_allow_html=True)
-            with c_head3:
-                st.markdown(f"**Đảm nhiệm bởi:** `{info.get('assigned_to', 'Chưa rõ')}`")
+            with c_head3: st.markdown(f"**Đảm nhiệm bởi:** `{info.get('assigned_to', 'Chưa rõ')}`")
             
             st.markdown("<hr style='margin: 10px 0; border-color: var(--border-color);'>", unsafe_allow_html=True)
             
             st.markdown("**📖 Miêu tả video (Context):**")
             desc = info.get('description', '')
-            if desc:
-                st.info(desc)
-            else:
-                st.caption("Không có miêu tả nào được nhập cho truy vấn này.")
+            if desc: st.info(desc)
+            else: st.caption("Không có miêu tả nào được nhập cho truy vấn này.")
                 
             if info.get('raw_data'):
                 with st.expander("🔍 Xem dữ liệu truy vấn thô (Raw Data / Top K)"):
                     st.code(info['raw_data'])
 
+            # NÚT DOWNLOAD THẦN THÁNH HIỆN NGAY DƯỚI ĐÂY SAU KHI TẠO XONG
+            if info.get("csv_content") and info["status"] == "🟢 Hoàn thành":
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.download_button(
+                    label=f"📥 TẢI FILE CSV VỪA TẠO ({selected_q}.csv)",
+                    data=info["csv_content"],
+                    file_name=f"{selected_q}.csv",
+                    mime="text/csv",
+                    type="primary",
+                    use_container_width=True
+                )
+
         # ==========================================
-        # 2. KHU VỰC TOOL SPAM GENERATOR
+        # 2. KHU VỰC TOOL SPAM GENERATOR (FULL WIDTH)
         # ==========================================
         st.markdown("<br>#### 🛠️ Công cụ tạo File (Generator)", unsafe_allow_html=True)
         with st.container(border=True):
@@ -399,69 +418,57 @@ elif menu == "⚙️ Auto-Generator (Spam)":
             
             with t1:
                 c1, c2, c3 = st.columns([1, 1.5, 1])
-                with c1:
-                    vid1 = st.text_input("Video ID:", value=pre_vid, key="v1")
-                with c2:
-                    f1 = st.text_input("Frames gốc (cách nhau dấu phẩy):", value=pre_frames, key="f1")
-                with c3:
-                    ans1 = st.text_input("Answer (Chỉ cho Q&A):", key="a1") if info['type'] == "Q&A" else ""
+                with c1: vid1 = st.text_input("Video ID:", value=pre_vid, key="v1")
+                with c2: f1 = st.text_input("Frames gốc (cách nhau dấu phẩy):", value=pre_frames, key="f1")
+                with c3: ans1 = st.text_input("Answer (Chỉ cho Q&A):", key="a1") if info['type'] == "Q&A" else ""
                 
                 c_btn1, c_btn2 = st.columns([1, 4])
-                with c_btn1:
-                    step1 = st.number_input("Bước nhảy (Step):", value=5, min_value=1, key="s1")
+                with c_btn1: step1 = st.number_input("Bước nhảy (Step):", value=5, min_value=1, key="s1")
                 with c_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE (HOÀN THÀNH)", type="primary", use_container_width=True, key="b1"):
+                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE", type="primary", use_container_width=True, key="b1"):
                         frames_list = [int(x) for x in re.findall(r'\d+', f1)]
                         csv_str = generate_spam_csv(vid1, frames_list, info['type']=="Q&A", ans1, 100, step1)
                         if csv_str:
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Tạo file thành công! Đã cập nhật trạng thái."); st.balloons(); st.rerun()
+                            save_db(db); st.success("Tạo file thành công! Nút Tải CSV đã xuất hiện ở phía trên."); st.rerun()
 
             with t2:
                 c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
-                with c1:
-                    vid2 = st.text_input("Video ID:", value=pre_vid, key="v2")
-                with c2:
-                    t_start = st.text_input("Bắt đầu (HH:MM:SS):", value="00:00:00", key="ts2")
-                with c3:
-                    t_end = st.text_input("Kết thúc (HH:MM:SS):", value="00:01:00", key="te2")
-                with c4:
-                    ans2 = st.text_input("Answer (Chỉ cho Q&A):", key="a2") if info['type'] == "Q&A" else ""
+                with c1: vid2 = st.text_input("Video ID:", value=pre_vid, key="v2")
+                with c2: t_start = st.text_input("Bắt đầu (HH:MM:SS):", value="00:00:00", key="ts2")
+                with c3: t_end = st.text_input("Kết thúc (HH:MM:SS):", value="00:01:00", key="te2")
+                with c4: ans2 = st.text_input("Answer (Chỉ cho Q&A):", key="a2") if info['type'] == "Q&A" else ""
                 
                 c_btn1, c_btn2 = st.columns([1, 4])
-                with c_btn1:
-                    fps = st.number_input("FPS:", value=25, key="fps2")
+                with c_btn1: fps = st.number_input("FPS:", value=25, key="fps2")
                 with c_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE (HOÀN THÀNH)", type="primary", use_container_width=True, key="b2"):
+                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE", type="primary", use_container_width=True, key="b2"):
                         s_sec, e_sec = time_to_sec(t_start), time_to_sec(t_end)
                         if s_sec >= 0 and e_sec > s_sec:
                             csv_str = generate_range_csv(vid2, s_sec*fps, e_sec*fps, info['type']=="Q&A", ans2, 100)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Tạo file thành công! Đã cập nhật trạng thái."); st.balloons(); st.rerun()
+                            save_db(db); st.success("Tạo file thành công! Nút Tải CSV đã xuất hiện ở phía trên."); st.rerun()
                         else: st.error("Thời gian không hợp lệ! (Bắt đầu phải nhỏ hơn kết thúc)")
 
             with t3:
                 st.info("Chế độ này áp dụng riêng cho loại bài TRAKE (Tìm kiếm chuỗi sự kiện).")
                 c1, c2 = st.columns([1, 2])
-                with c1:
-                    vid3 = st.text_input("Video ID:", value=pre_vid, key="v3")
-                with c2:
-                    f3 = st.text_input(f"Nhập ĐÚNG {info.get('num_events', 'N')} frames (Cách nhau dấu phẩy):", value=pre_frames, key="f3")
+                with c1: vid3 = st.text_input("Video ID:", value=pre_vid, key="v3")
+                with c2: f3 = st.text_input(f"Nhập ĐÚNG {info.get('num_events', 'N')} frames (Cách nhau dấu phẩy):", value=pre_frames, key="f3")
                 
                 c_btn1, c_btn2 = st.columns([1, 4])
-                with c_btn1:
-                    step3 = st.number_input("Bước dịch chuyển:", value=5, min_value=1, key="s3")
+                with c_btn1: step3 = st.number_input("Bước dịch chuyển:", value=5, min_value=1, key="s3")
                 with c_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE (HOÀN THÀNH)", type="primary", use_container_width=True, key="b3"):
+                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE", type="primary", use_container_width=True, key="b3"):
                         frames_list = [int(x) for x in re.findall(r'\d+', f3)]
                         if len(frames_list) != info.get('num_events', len(frames_list)): st.error(f"Cần nhập đúng {info.get('num_events')} frame theo cấu hình!")
                         else:
                             csv_str = generate_trake_csv(vid3, frames_list, 100, step3)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Tạo file thành công! Đã cập nhật trạng thái."); st.balloons(); st.rerun()
+                            save_db(db); st.success("Tạo file thành công! Nút Tải CSV đã xuất hiện ở phía trên."); st.rerun()
 
 
 elif menu == "📤 Cập Nhật External CSV":
@@ -505,7 +512,7 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
                 
         with st.container(border=True):
             st.markdown("#### 🧾 Lịch Sử Nộp Trên Cổng BTC")
-            logs = st.session_state.submission_log
+            logs = load_submission_log()
             count = len(logs)
             color = "var(--danger)" if count >= 3 else "var(--accent-cyan)"
             st.markdown(f"<h1 style='color:{color}; text-align:center;'>{count}/3 Lần Nộp</h1>", unsafe_allow_html=True)
@@ -513,7 +520,7 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
                 logs.append({"time": datetime.now().strftime("%H:%M:%S"), "by": current_member})
                 save_submission_log(logs); st.rerun()
             if st.button("🔄 Reset cho tập truy vấn mới", use_container_width=True):
-                st.session_state.submission_log = []; save_submission_log([]); st.rerun()
+                save_submission_log([]); st.rerun()
 
     with col2:
         st.markdown(f"#### ✅ Các File Đã Xong ({len(done_qs)})")
@@ -543,6 +550,6 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
 # ==========================================
 st.markdown("""
 <div style='text-align:center; padding-top:40px; color:var(--text-muted); font-size:12px; font-family:var(--font-mono);'>
-    AIC Workspace 2026 • Tactical Edition (Expanded Info View)
+    AIC Workspace 2026 • Real-time Sync & Rapid Export Edition
 </div>
 """, unsafe_allow_html=True)
