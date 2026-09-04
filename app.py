@@ -304,7 +304,6 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
     page_header("Quản Lý & Phân Công Nhiệm Vụ", "Tạo các truy vấn từ đề thi, khóa mục tiêu để tránh đụng hàng đồng đội.")
     c1, c2 = st.columns([1.1, 1.5], gap="large")
     
-    # Kỹ thuật dùng Session State để xóa form mà không dùng st.form
     if 'input_q_name' not in st.session_state: st.session_state.input_q_name = ""
     if 'input_q_desc' not in st.session_state: st.session_state.input_q_desc = ""
     if 'input_q_raw' not in st.session_state: st.session_state.input_q_raw = ""
@@ -312,29 +311,25 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
     with c1:
         with st.container(border=True):
             st.markdown("#### ➕ Tạo Truy Vấn Mới")
-            
-            q_name = st.text_input("Tên Query (VD: query-p2-1-kis):", value=st.session_state.input_q_name)
-            q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
-            q_num = st.number_input("Số lượng sự kiện (Chỉ dùng cho TRAKE):", min_value=2, value=4)
-            q_desc = st.text_area("Miêu tả ngữ cảnh video:", height=80, value=st.session_state.input_q_desc)
-            q_raw = st.text_area("Paste Top K Dữ Liệu Raw (Tùy chọn):", height=80, value=st.session_state.input_q_raw)
-            
-            if st.button("Thêm Vào Hàng Đợi", type="primary", use_container_width=True):
-                if not q_name: 
-                    st.error("Tên Query không được để trống!")
-                elif q_name in db: 
-                    st.error(f"❌ Query '{q_name}' đã tồn tại! Đặt tên khác để không bị đè.")
-                else:
-                    db[q_name] = {
-                        "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
-                        "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_type == "TRAKE" else None
-                    }
-                    save_db(db)
-                    # Xóa biến nhập liệu & Rerun
-                    st.session_state.input_q_name = ""
-                    st.session_state.input_q_desc = ""
-                    st.session_state.input_q_raw = ""
-                    st.rerun()
+            with st.form("form_tao_query", clear_on_submit=True):
+                q_name = st.text_input("Tên Query (VD: query-p2-1-kis):")
+                q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True)
+                q_num = st.number_input("Số lượng sự kiện (Chỉ dùng cho TRAKE):", min_value=2, value=4)
+                q_desc = st.text_area("Miêu tả ngữ cảnh video:", height=80)
+                q_raw = st.text_area("Paste Top K Dữ Liệu Raw (Tùy chọn):", height=80)
+                
+                submitted = st.form_submit_button("Thêm Vào Hàng Đợi", type="primary", use_container_width=True)
+                if submitted:
+                    if not q_name: 
+                        st.error("Tên Query không được để trống!")
+                    elif q_name in db: 
+                        st.error(f"❌ Query '{q_name}' đã tồn tại! Đặt tên khác để không bị đè.")
+                    else:
+                        db[q_name] = {
+                            "type": q_type, "description": q_desc, "raw_data": q_raw, "status": "🔴 Chưa làm", 
+                            "assigned_to": "None", "csv_content": "", "num_events": int(q_num) if q_type == "TRAKE" else None
+                        }
+                        save_db(db); st.rerun()
 
     with c2:
         st.markdown("#### 📑 Bảng Phân Công Tác Chiến")
@@ -403,18 +398,6 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                 with st.expander("🔍 Xem dữ liệu truy vấn thô (Raw Data / Top K)"):
                     st.code(info['raw_data'])
 
-            # NÚT DOWNLOAD XUẤT HIỆN TẠI ĐÂY
-            if info.get("csv_content") and info["status"] == "🟢 Hoàn thành":
-                st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-                st.download_button(
-                    label=f"📥 TẢI XUỐNG FILE CSV ({selected_q}.csv)",
-                    data=info["csv_content"],
-                    file_name=f"{selected_q}.csv",
-                    mime="text/csv",
-                    type="primary",
-                    use_container_width=True
-                )
-
         # ==========================================
         # 2. KHU VỰC TOOL SPAM GENERATOR
         # ==========================================
@@ -439,7 +422,7 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                         csv_str = generate_spam_csv(vid1, frames_list, info['type']=="Q&A", ans1, 100, step1)
                         if csv_str:
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Tạo file thành công! Nút Tải CSV đã xuất hiện ở phía trên."); st.rerun()
+                            save_db(db); st.rerun()
 
             with t2:
                 c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
@@ -457,7 +440,7 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                         if s_sec >= 0 and e_sec > s_sec:
                             csv_str = generate_range_csv(vid2, s_sec*fps, e_sec*fps, info['type']=="Q&A", ans2, 100)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Tạo file thành công! Nút Tải CSV đã xuất hiện ở phía trên."); st.rerun()
+                            save_db(db); st.rerun()
                         else: st.error("Thời gian không hợp lệ! (Bắt đầu phải nhỏ hơn kết thúc)")
 
             with t3:
@@ -476,7 +459,23 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                         else:
                             csv_str = generate_trake_csv(vid3, frames_list, 100, step3)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Tạo file thành công! Nút Tải CSV đã xuất hiện ở phía trên."); st.rerun()
+                            save_db(db); st.rerun()
+
+            # NÚT DOWNLOAD NẰM NGAY CHÂN PHẦN SPAM - DỄ NHÌN NHẤT!
+            if info.get("csv_content"):
+                st.markdown("<hr style='margin: 15px 0 10px 0; border-color: var(--border-color);'>", unsafe_allow_html=True)
+                c_dl1, c_dl2 = st.columns([1.5, 1])
+                with c_dl1:
+                    st.markdown(f"<div style='margin-top: 8px; color: var(--success); font-weight: 600;'>✅ Đã tạo xong 100 dòng cho {selected_q}!</div>", unsafe_allow_html=True)
+                with c_dl2:
+                    st.download_button(
+                        label="📥 TẢI FILE CSV XUỐNG MÁY",
+                        data=info["csv_content"],
+                        file_name=f"{selected_q}.csv",
+                        mime="text/csv",
+                        type="primary",
+                        use_container_width=True
+                    )
 
 
 elif menu == "📤 Cập Nhật External CSV":
