@@ -311,7 +311,6 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
     with c1:
         with st.container(border=True):
             st.markdown("#### ➕ Tạo Truy Vấn Mới")
-            
             q_name = st.text_input("Tên Query (VD: query-p2-1-kis):", key="in_q_name")
             q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True, key="in_q_type")
             
@@ -338,7 +337,6 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                         "num_events": int(q_num) if q_type == "TRAKE" else None
                     }
                     save_db(db)
-                    
                     st.session_state["in_q_name"] = ""
                     st.session_state["in_q_desc"] = ""
                     st.session_state["in_q_raw"] = ""
@@ -412,7 +410,7 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                     st.code(info['raw_data'])
 
         # ==========================================
-        # 2. KHU VỰC TOOL SPAM GENERATOR (FULL WIDTH)
+        # 2. KHU VỰC TOOL SPAM GENERATOR
         # ==========================================
         st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
         st.markdown("#### 🛠️ Công cụ tạo File (Generator)")
@@ -488,7 +486,6 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                         type="primary",
                         use_container_width=True
                     )
-
 
 elif menu == "📤 Cập Nhật External CSV":
     page_header("Validation & Manual Upload", "Tải lên file CSV bạn tự code ngoài. Hệ thống sẽ quét lỗi tự động.")
@@ -570,7 +567,13 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
             else:
                 st.caption("Không có miêu tả nào được lưu cho câu này.")
             
-            st.markdown(f"**📄 Nội dung file CSV:**")
+            # --- THÊM PHẦN RAW DATA VÀO ĐÂY THEO YÊU CẦU ---
+            if v_info.get('raw_data'):
+                with st.expander("🔍 Xem dữ liệu truy vấn thô (Raw Data / Top K)"):
+                    st.code(v_info['raw_data'])
+            # -----------------------------------------------
+            
+            st.markdown(f"<br>**📄 Nội dung file CSV:**", unsafe_allow_html=True)
             st.code(v_info["csv_content"], language="csv")
             
         st.markdown(f"<br>#### ⚠️ Còn Thiếu ({len(missing_qs)})", unsafe_allow_html=True)
