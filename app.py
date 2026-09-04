@@ -18,15 +18,6 @@ SUBMISSION_LOG_FILE = "submission_log.json"
 TEAM_MEMBERS = ["VThành", "LThiện", "PThiện", "Nguyên", "NThành"]
 SUFFIX_MAP = {"Textual KIS": "kis", "Q&A": "qa", "TRAKE": "trake"}
 MAX_ANSWER_LEN = 100
-DEFAULT_FOLDER_ID = "1de5La8Dr0R7coCblvwFGpU_1_OSueJF2"
-
-# 💡 TỪ ĐIỂN ÁNH XẠ: ĐIỀN ID TỪNG VIDEO CỦA DRIVE VÀO ĐÂY ĐỂ SEARCH NHANH
-# (Trong thực tế thi đấu, bạn có thể load từ 1 file mapping.csv của đội)
-GDRIVE_MAPPING = {
-    "L21_V008": "ID_FILE_DRIVE_CUA_V008",  # VD: "1abc_XYZ123..."
-    "L21_V009": "ID_FILE_DRIVE_CUA_V009",
-    # Thêm các video khác vào đây...
-}
 
 # ==========================================
 # THEME — HỆ THỐNG DESIGN SYSTEM (UI UX PRO MAX)
@@ -233,14 +224,6 @@ def auto_extract_data(raw_text):
     vid = vids[0] if vids else ""
     return vid, ", ".join(frames[:10])
 
-def extract_gdrive_id(url):
-    if "drive.google.com" in url:
-        match_folder = re.search(r'/folders/([a-zA-Z0-9_-]+)', url)
-        if match_folder: return match_folder.group(1)
-        match_file = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
-        if match_file: return match_file.group(1)
-    return url.strip()
-
 # ==========================================
 # AUTH SCREEN
 # ==========================================
@@ -344,7 +327,7 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                 with col_a:
                     badge = status_badge(info['status'])
                     ty = f"TRAKE N={info['num_events']}" if info['type']=="TRAKE" else info['type']
-                    st.markdown(f"{badge} &nbsp; **`{q_id}`** <span class='tag-type'>{ty}</span>", unsafe_allow_html=True)
+                    st.markdown(f"{badge} &nbsp; **`{q_id}`** <span style='font-family:var(--font-mono); font-size:12px; color:var(--text-muted);'>[{ty}]</span>", unsafe_allow_html=True)
                     assignee = info.get('assigned_to')
                     assign_txt = f"<span style='color:var(--warning); font-weight:700;'>{assignee} đang xử lý</span>" if info['status'] == "🟡 Đang làm" else f"Tạo bởi: {assignee}"
                     st.caption(f"{assign_txt} | {info['description'][:50]}...", unsafe_allow_html=True)
@@ -364,131 +347,122 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                     with c_del:
                         if st.button("🗑️", key=f"del_{q_id}"): del db[q_id]; save_db(db); st.rerun()
 
+
 elif menu == "⚙️ Auto-Generator (Spam)":
-    page_header("AI Generation & Video Monitor", "Màn hình tác chiến: Vừa dò frame vừa spam tạo file CSV.")
+    page_header("AI Generation Engine", "Màn hình tác chiến: Dò frame và tự động sinh file CSV nộp bài.")
     
     active_qs = {k: v for k, v in db.items() if v["status"] in ["🔴 Chưa làm", "🔴 Cần làm lại", "🟡 Đang làm"]}
     
     if not active_qs:
-        st.success("Tất cả các Query đều đã hoàn thành hoặc chưa có Query nào!")
+        st.success("Tất cả các Query đều đã hoàn thành hoặc chưa có Query nào trong hệ thống!")
     else:
-        col_tools, col_player = st.columns([1.5, 1.4], gap="large")
+        # Chọn Query
+        selected_q = st.selectbox("🎯 Chọn Query đang tác chiến:", list(active_qs.keys()))
+        info = db[selected_q]
         
-        with col_tools:
-            selected_q = st.selectbox("🎯 Chọn Query đang tác chiến:", list(active_qs.keys()))
-            info = db[selected_q]
+        pre_vid, pre_frames = "", ""
+        if info.get('raw_data'): pre_vid, pre_frames = auto_extract_data(info['raw_data'])
+        
+        # ==========================================
+        # 1. HIỂN THỊ CHI TIẾT THÔNG TIN TRUY VẤN
+        # ==========================================
+        st.markdown("#### 📋 Chi tiết mục tiêu")
+        with st.container(border=True):
+            c_head1, c_head2, c_head3 = st.columns(3)
+            with c_head1:
+                st.markdown(f"**Trạng thái:** {status_badge(info['status'])}", unsafe_allow_html=True)
+            with c_head2:
+                ty = f"TRAKE (N={info['num_events']})" if info['type']=="TRAKE" else info['type']
+                st.markdown(f"**Loại bài:** `<{ty}>`", unsafe_allow_html=True)
+            with c_head3:
+                st.markdown(f"**Đảm nhiệm bởi:** `{info.get('assigned_to', 'Chưa rõ')}`")
             
-            pre_vid, pre_frames = "", ""
-            if info['raw_data']: pre_vid, pre_frames = auto_extract_data(info['raw_data'])
+            st.markdown("<hr style='margin: 10px 0; border-color: var(--border-color);'>", unsafe_allow_html=True)
+            
+            st.markdown("**📖 Miêu tả video (Context):**")
+            desc = info.get('description', '')
+            if desc:
+                st.info(desc)
+            else:
+                st.caption("Không có miêu tả nào được nhập cho truy vấn này.")
                 
-            with st.container(border=True):
-                st.markdown(f"**Thông tin:** `{selected_q}` | Loại: `{info['type']}` | Trạng thái: {status_badge(info['status'])}", unsafe_allow_html=True)
-                    
+            if info.get('raw_data'):
+                with st.expander("🔍 Xem dữ liệu truy vấn thô (Raw Data / Top K)"):
+                    st.code(info['raw_data'])
+
+        # ==========================================
+        # 2. KHU VỰC TOOL SPAM GENERATOR
+        # ==========================================
+        st.markdown("<br>#### 🛠️ Công cụ tạo File (Generator)", unsafe_allow_html=True)
+        with st.container(border=True):
             t1, t2, t3 = st.tabs(["🎯 Tỏa Tròn (Point)", "⏱️ Khoảng (Range)", "🔗 Chuỗi (TRAKE)"])
             
             with t1:
-                c1, c2 = st.columns([1, 1])
+                c1, c2, c3 = st.columns([1, 1.5, 1])
                 with c1:
                     vid1 = st.text_input("Video ID:", value=pre_vid, key="v1")
-                    f1 = st.text_area("Frames gốc (cách nhau dấu phẩy):", value=pre_frames, key="f1")
-                    ans1 = st.text_input("Answer (Chỉ cho Q&A):", key="a1") if info['type'] == "Q&A" else ""
                 with c2:
+                    f1 = st.text_input("Frames gốc (cách nhau dấu phẩy):", value=pre_frames, key="f1")
+                with c3:
+                    ans1 = st.text_input("Answer (Chỉ cho Q&A):", key="a1") if info['type'] == "Q&A" else ""
+                
+                c_btn1, c_btn2 = st.columns([1, 4])
+                with c_btn1:
                     step1 = st.number_input("Bước nhảy (Step):", value=5, min_value=1, key="s1")
+                with c_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🚀 TẠO & LƯU DB (HOÀN THÀNH)", type="primary", use_container_width=True, key="b1"):
+                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE (HOÀN THÀNH)", type="primary", use_container_width=True, key="b1"):
                         frames_list = [int(x) for x in re.findall(r'\d+', f1)]
                         csv_str = generate_spam_csv(vid1, frames_list, info['type']=="Q&A", ans1, 100, step1)
                         if csv_str:
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Thành công!"); st.balloons(); st.rerun()
+                            save_db(db); st.success("Tạo file thành công! Đã cập nhật trạng thái."); st.balloons(); st.rerun()
 
             with t2:
-                c1, c2 = st.columns([1, 1])
+                c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
                 with c1:
                     vid2 = st.text_input("Video ID:", value=pre_vid, key="v2")
-                    t_start = st.text_input("Bắt đầu (HH:MM:SS):", value="00:00:00", key="ts2")
-                    t_end = st.text_input("Kết thúc (HH:MM:SS):", value="00:01:00", key="te2")
-                    ans2 = st.text_input("Answer (Chỉ cho Q&A):", key="a2") if info['type'] == "Q&A" else ""
                 with c2:
+                    t_start = st.text_input("Bắt đầu (HH:MM:SS):", value="00:00:00", key="ts2")
+                with c3:
+                    t_end = st.text_input("Kết thúc (HH:MM:SS):", value="00:01:00", key="te2")
+                with c4:
+                    ans2 = st.text_input("Answer (Chỉ cho Q&A):", key="a2") if info['type'] == "Q&A" else ""
+                
+                c_btn1, c_btn2 = st.columns([1, 4])
+                with c_btn1:
                     fps = st.number_input("FPS:", value=25, key="fps2")
-                    st.markdown("<br><br><br>", unsafe_allow_html=True)
-                    if st.button("🚀 TẠO & LƯU DB (HOÀN THÀNH)", type="primary", use_container_width=True, key="b2"):
+                with c_btn2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE (HOÀN THÀNH)", type="primary", use_container_width=True, key="b2"):
                         s_sec, e_sec = time_to_sec(t_start), time_to_sec(t_end)
                         if s_sec >= 0 and e_sec > s_sec:
                             csv_str = generate_range_csv(vid2, s_sec*fps, e_sec*fps, info['type']=="Q&A", ans2, 100)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Thành công!"); st.balloons(); st.rerun()
-                        else: st.error("Thời gian không hợp lệ!")
+                            save_db(db); st.success("Tạo file thành công! Đã cập nhật trạng thái."); st.balloons(); st.rerun()
+                        else: st.error("Thời gian không hợp lệ! (Bắt đầu phải nhỏ hơn kết thúc)")
 
             with t3:
-                c1, c2 = st.columns([1, 1])
+                st.info("Chế độ này áp dụng riêng cho loại bài TRAKE (Tìm kiếm chuỗi sự kiện).")
+                c1, c2 = st.columns([1, 2])
                 with c1:
                     vid3 = st.text_input("Video ID:", value=pre_vid, key="v3")
-                    f3 = st.text_area(f"Nhập ĐÚNG {info.get('num_events', 'N')} frames:", value=pre_frames, key="f3")
                 with c2:
+                    f3 = st.text_input(f"Nhập ĐÚNG {info.get('num_events', 'N')} frames (Cách nhau dấu phẩy):", value=pre_frames, key="f3")
+                
+                c_btn1, c_btn2 = st.columns([1, 4])
+                with c_btn1:
                     step3 = st.number_input("Bước dịch chuyển:", value=5, min_value=1, key="s3")
+                with c_btn2:
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🚀 TẠO & LƯU DB (HOÀN THÀNH)", type="primary", use_container_width=True, key="b3"):
+                    if st.button("🚀 TẠO FILE & LƯU VÀO DATABASE (HOÀN THÀNH)", type="primary", use_container_width=True, key="b3"):
                         frames_list = [int(x) for x in re.findall(r'\d+', f3)]
-                        if len(frames_list) != info.get('num_events', len(frames_list)): st.error(f"Cần nhập đúng {info.get('num_events')} frame!")
+                        if len(frames_list) != info.get('num_events', len(frames_list)): st.error(f"Cần nhập đúng {info.get('num_events')} frame theo cấu hình!")
                         else:
                             csv_str = generate_trake_csv(vid3, frames_list, 100, step3)
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
-                            save_db(db); st.success("Thành công!"); st.balloons(); st.rerun()
+                            save_db(db); st.success("Tạo file thành công! Đã cập nhật trạng thái."); st.balloons(); st.rerun()
 
-        # ==================== KHU VỰC LIVE MONITOR TÍCH HỢP SEARCH ====================
-        with col_player:
-            st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <h4 style="color:var(--accent-cyan); margin:0;">📺 Live Monitor</h4>
-                <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">Folder ID: {DEFAULT_FOLDER_ID[:8]}...</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            with st.container(border=True):
-                # 1. THANH SEARCH SIÊU TỐC ĐỘ (Nằm thẳng trong box Monitor)
-                search_vid = st.text_input(
-                    "🔍 NHẬP TÊN VIDEO ĐỂ TÌM & PHÁT (VD: L21_V008)", 
-                    placeholder="Gõ tên video vào đây...",
-                    help="Hệ thống sẽ tra cứu trong GDRIVE_MAPPING để mở trực tiếp video này."
-                )
-                
-                # 2. XỬ LÝ LOGIC IFRAME DỰA VÀO THANH SEARCH
-                iframe_src = ""
-                player_type = ""
-                
-                if search_vid:
-                    clean_search = clean_video_id(search_vid).strip()
-                    # Tra từ điển Mapping
-                    vid_drive_id = GDRIVE_MAPPING.get(clean_search)
-                    
-                    if vid_drive_id:
-                        # CHUYỂN NGAY LẬP TỨC SANG CHẾ ĐỘ PHÁT ĐƠN (SINGLE FILE)
-                        iframe_src = f"https://drive.google.com/file/d/{vid_drive_id}/preview"
-                        player_type = f"FILE PREVIEW - {clean_search}"
-                    else:
-                        st.warning(f"⚠️ Chưa có dữ liệu Drive ID cho `{clean_search}` trong GDRIVE_MAPPING. Vẫn hiển thị Thư mục.")
-                        # Rơi lại về chế độ Thư mục
-                        iframe_src = f"https://drive.google.com/embeddedfolderview?id={DEFAULT_FOLDER_ID}#grid"
-                        player_type = "FOLDER VIEW"
-                else:
-                    # Chế độ Thư mục mặc định
-                    iframe_src = f"https://drive.google.com/embeddedfolderview?id={DEFAULT_FOLDER_ID}#grid"
-                    player_type = "FOLDER VIEW"
-
-                # 3. RENDER KHUNG HÌNH (GIAO DIỆN CYBERPUNK)
-                st.markdown(f"""
-                <div style="border: 1px solid var(--accent-cyan); border-radius: 8px; overflow: hidden; box-shadow: 0 0 20px rgba(6,182,212,0.15); margin-top: 10px;">
-                    <div style="background: var(--bg-sidebar); padding: 6px 12px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--accent-cyan); border-bottom: 1px solid var(--accent-cyan); display: flex; justify-content: space-between;">
-                        <span style="display:flex; align-items:center; gap:6px;">
-                            <span style="width:8px; height:8px; background:var(--danger); border-radius:50%; box-shadow:0 0 6px var(--danger);"></span>
-                            TACTICAL FEED
-                        </span>
-                        <span>[ {player_type} ]</span>
-                    </div>
-                    <iframe src="{iframe_src}" width="100%" height="340" style="border:none;" allow="autoplay"></iframe>
-                </div>
-                """, unsafe_allow_html=True)
 
 elif menu == "📤 Cập Nhật External CSV":
     page_header("Validation & Manual Upload", "Tải lên file CSV bạn tự code ngoài. Hệ thống sẽ quét lỗi tự động.")
@@ -569,6 +543,6 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
 # ==========================================
 st.markdown("""
 <div style='text-align:center; padding-top:40px; color:var(--text-muted); font-size:12px; font-family:var(--font-mono);'>
-    AIC Workspace 2026 • Tactical Edition + Integrated Search Bar
+    AIC Workspace 2026 • Tactical Edition (Expanded Info View)
 </div>
 """, unsafe_allow_html=True)
