@@ -303,12 +303,14 @@ menu = st.session_state.menu
 if menu == "📋 Quản Lý Nhiệm Vụ":
     page_header("Quản Lý & Phân Công Nhiệm Vụ", "Tạo các truy vấn từ đề thi, khóa mục tiêu để tránh đụng hàng đồng đội.")
     c1, c2 = st.columns([1.1, 1.5], gap="large")
+    
+    if 'input_q_name' not in st.session_state: st.session_state.input_q_name = ""
+    if 'input_q_desc' not in st.session_state: st.session_state.input_q_desc = ""
+    if 'input_q_raw' not in st.session_state: st.session_state.input_q_raw = ""
 
     with c1:
         with st.container(border=True):
             st.markdown("#### ➕ Tạo Truy Vấn Mới")
-            
-            # GIẢI PHÁP GIAO DIỆN ĐỘNG (BỎ st.form)
             q_name = st.text_input("Tên Query (VD: query-p2-1-kis):", key="in_q_name")
             q_type = st.radio("Loại Task:", ["Textual KIS", "Q&A", "TRAKE"], horizontal=True, key="in_q_type")
             
@@ -335,8 +337,6 @@ if menu == "📋 Quản Lý Nhiệm Vụ":
                         "num_events": int(q_num) if q_type == "TRAKE" else None
                     }
                     save_db(db)
-                    
-                    # Dùng Session State để xóa trắng Form sau khi tạo
                     st.session_state["in_q_name"] = ""
                     st.session_state["in_q_desc"] = ""
                     st.session_state["in_q_raw"] = ""
@@ -410,7 +410,7 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                     st.code(info['raw_data'])
 
         # ==========================================
-        # 2. KHU VỰC TOOL SPAM GENERATOR (FULL WIDTH)
+        # 2. KHU VỰC TOOL SPAM GENERATOR
         # ==========================================
         st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
         st.markdown("#### 🛠️ Công cụ tạo File (Generator)")
@@ -472,7 +472,6 @@ elif menu == "⚙️ Auto-Generator (Spam)":
                             db[selected_q].update({"csv_content": csv_str, "status": "🟢 Hoàn thành", "completed_by": current_member})
                             save_db(db); st.rerun()
 
-            # NÚT DOWNLOAD NẰM NGAY CHÂN PHẦN SPAM - DỄ NHÌN NHẤT!
             if info.get("csv_content"):
                 st.markdown("<hr style='margin: 15px 0 10px 0; border-color: var(--border-color);'>", unsafe_allow_html=True)
                 c_dl1, c_dl2 = st.columns([1.5, 1])
@@ -554,9 +553,23 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
                         db[k]["status"] = "🔴 Cần làm lại"; db[k]["csv_content"] = ""; save_db(db); st.rerun()
                     if st.button("👁️ Xem", key=f"view_{k}"): st.session_state.view_query = k
 
+        # ==========================================
+        # HIỂN THỊ CHI TIẾT NGỮ CẢNH KHI BẤM NÚT "XEM"
+        # ==========================================
         if st.session_state.get("view_query") in db:
-            st.markdown(f"<br>**Nội dung CSV của `{st.session_state.view_query}`:**", unsafe_allow_html=True)
-            st.code(db[st.session_state.view_query]["csv_content"], language="csv")
+            vq = st.session_state.view_query
+            v_info = db[vq]
+            st.markdown("<hr style='border-color: var(--border-color); margin: 20px 0;'>", unsafe_allow_html=True)
+            st.markdown(f"#### 🔍 Chi tiết: `{vq}`")
+            
+            if v_info.get("description"):
+                st.markdown(f"**📖 Miêu tả ngữ cảnh:**")
+                st.info(v_info['description'])
+            else:
+                st.caption("Không có miêu tả nào được lưu cho câu này.")
+            
+            st.markdown(f"**📄 Nội dung file CSV:**")
+            st.code(v_info["csv_content"], language="csv")
             
         st.markdown(f"<br>#### ⚠️ Còn Thiếu ({len(missing_qs)})", unsafe_allow_html=True)
         if not missing_qs: st.success("Toàn đội đã xuất sắc hoàn thành tất cả Query!")
@@ -566,8 +579,4 @@ elif menu == "📦 Kiểm Tra & Đóng Gói":
 # ==========================================
 # FOOTER
 # ==========================================
-st.markdown("""
-<div style='text-align:center; padding-top:40px; color:var(--text-muted); font-size:12px; font-family:var(--font-mono);'>
-    AIC Workspace 2026 • Optimized Tactical Edition (Final)
-</div>
-""", unsafe_allow_html=True)
+st.
